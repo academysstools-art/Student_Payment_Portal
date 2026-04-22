@@ -12,11 +12,26 @@ const app = express();
 // Middleware
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173",
-      "http://localhost:5174",
-      process.env.FRONTEND_URL,
-    ].filter(Boolean),
+    origin: function (origin, callback) {
+      // Allow requests with no origin (mobile apps, curl, etc.)
+      if (!origin) return callback(null, true);
+
+      const allowed = [
+        "http://localhost:5173",
+        "http://localhost:5174",
+      ];
+
+      // Add FRONTEND_URL (strip trailing slash)
+      if (process.env.FRONTEND_URL) {
+        allowed.push(process.env.FRONTEND_URL.replace(/\/+$/, ""));
+      }
+
+      if (allowed.includes(origin) || origin.endsWith(".vercel.app")) {
+        return callback(null, true);
+      }
+
+      callback(new Error("Not allowed by CORS"));
+    },
     credentials: true,
   })
 );

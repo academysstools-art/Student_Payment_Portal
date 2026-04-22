@@ -12,10 +12,23 @@ function getGoogleSheetsClient() {
   console.log("[Sheets] Private key starts with:", rawKey ? rawKey.substring(0, 30) + "..." : "MISSING");
   console.log("[Sheets] Private key length:", rawKey ? rawKey.length : 0);
 
+  // Handle private key: Vercel may store \n as literal or actual newlines
+  let privateKey = rawKey;
+  if (privateKey) {
+    // If the key contains literal \n (not actual newlines), convert them
+    if (!privateKey.includes("\n") || privateKey.includes("\\n")) {
+      privateKey = privateKey.replace(/\\n/g, "\n");
+    }
+    // Remove surrounding quotes if present
+    privateKey = privateKey.replace(/^["']|["']$/g, "");
+  }
+  console.log("[Sheets] Private key has real newlines:", privateKey ? privateKey.includes("\n") : false);
+  console.log("[Sheets] Private key starts correct:", privateKey ? privateKey.startsWith("-----BEGIN") : false);
+
   const auth = new google.auth.GoogleAuth({
     credentials: {
       client_email: email,
-      private_key: rawKey.replace(/\\n/g, "\n"),
+      private_key: privateKey,
     },
     scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
   });

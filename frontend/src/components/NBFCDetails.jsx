@@ -8,8 +8,6 @@ export default function NBFCDetails({ data }) {
 
   if (!hasNBFC1 && !hasNBFC2 && !data.currentNBFC) return null;
 
-  const partnerCount = [hasNBFC1, hasNBFC2, !!data.currentNBFC].filter(Boolean).length;
-
   const fmt = (value) => {
     const num = parseFloat(value);
     if (isNaN(num)) return value || "--";
@@ -91,9 +89,6 @@ export default function NBFCDetails({ data }) {
             Financing Portfolio
           </h3>
         </div>
-        <span className="text-[9px] font-black bg-blue-900 text-white px-2 py-0.5 rounded-full uppercase tracking-widest">
-          {partnerCount} {partnerCount === 1 ? "Partner" : "Partners"}
-        </span>
       </div>
 
       {/* Content */}

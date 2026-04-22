@@ -48,23 +48,6 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Temporary debug endpoint - REMOVE AFTER FIXING
-app.get("/api/debug-env", (req, res) => {
-  const pk = process.env.GOOGLE_PRIVATE_KEY || "";
-  res.json({
-    GOOGLE_SPREADSHEET_ID: process.env.GOOGLE_SPREADSHEET_ID || "MISSING",
-    GOOGLE_SHEET_NAME: process.env.GOOGLE_SHEET_NAME || "MISSING",
-    GOOGLE_SERVICE_ACCOUNT_EMAIL: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || "MISSING",
-    PRIVATE_KEY_LENGTH: pk.length,
-    PRIVATE_KEY_STARTS: pk.substring(0, 30),
-    PRIVATE_KEY_ENDS: pk.substring(pk.length - 30),
-    PRIVATE_KEY_HAS_LITERAL_BACKSLASH_N: pk.includes("\\n"),
-    PRIVATE_KEY_HAS_REAL_NEWLINES: pk.includes("\n"),
-    JWT_SECRET_SET: !!process.env.JWT_SECRET,
-    FRONTEND_URL: process.env.FRONTEND_URL || "MISSING",
-  });
-});
-
 // Only listen when running locally (not on Vercel)
 if (process.env.VERCEL !== "1") {
   const PORT = process.env.PORT || 5000;

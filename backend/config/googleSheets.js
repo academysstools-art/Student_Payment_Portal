@@ -5,10 +5,17 @@ let sheetsInstance = null;
 function getGoogleSheetsClient() {
   if (sheetsInstance) return sheetsInstance;
 
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const rawKey = process.env.GOOGLE_PRIVATE_KEY;
+
+  console.log("[Sheets] Service account email:", email);
+  console.log("[Sheets] Private key starts with:", rawKey ? rawKey.substring(0, 30) + "..." : "MISSING");
+  console.log("[Sheets] Private key length:", rawKey ? rawKey.length : 0);
+
   const auth = new google.auth.GoogleAuth({
     credentials: {
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+      client_email: email,
+      private_key: rawKey.replace(/\\n/g, "\n"),
     },
     scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
   });
@@ -20,26 +27,37 @@ function getGoogleSheetsClient() {
 async function getSheetData() {
   const sheets = getGoogleSheetsClient();
   const spreadsheetId = process.env.GOOGLE_SPREADSHEET_ID;
-  const sheetName = process.env.GOOGLE_SHEET_NAME || "Sheet1";
+  const sheetName = (process.env.GOOGLE_SHEET_NAME || "Sheet1").trim();
 
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: `${sheetName}`,
-  });
+  console.log("[Sheets] Spreadsheet ID:", spreadsheetId);
+  console.log("[Sheets] Sheet name:", JSON.stringify(sheetName));
 
-  const rows = response.data.values;
-  if (!rows || rows.length === 0) return [];
-
-  const headers = rows[0];
-  const data = rows.slice(1).map((row) => {
-    const obj = {};
-    headers.forEach((header, i) => {
-      obj[header.trim()] = row[i] || "";
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}`,
     });
-    return obj;
-  });
 
-  return data;
+    const rows = response.data.values;
+    console.log("[Sheets] Rows fetched:", rows ? rows.length : 0);
+    if (!rows || rows.length === 0) return [];
+
+    const headers = rows[0];
+    const data = rows.slice(1).map((row) => {
+      const obj = {};
+      headers.forEach((header, i) => {
+        obj[header.trim()] = row[i] || "";
+      });
+      return obj;
+    });
+
+    return data;
+  } catch (err) {
+    console.error("[Sheets] API error:", err.message);
+    console.error("[Sheets] Error code:", err.code);
+    console.error("[Sheets] Error details:", JSON.stringify(err.errors || []));
+    throw err;
+  }
 }
 
 async function getStudentByUserId(userId) {

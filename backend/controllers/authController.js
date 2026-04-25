@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken");
-const { getStudentByUserId } = require("../config/googleSheets");
+const { getStudentFromSheet, SHEET_NAMES } = require("../config/googleSheets");
 
 // In-memory login tracking
 const loginLogs = [];
@@ -12,7 +12,7 @@ async function loginWithUserId(req, res) {
       return res.status(400).json({ error: "User ID is required" });
     }
 
-    const student = await getStudentByUserId(userId);
+    const student = await getStudentFromSheet(SHEET_NAMES.USER_BASIC_DETAILS, userId);
 
     if (!student) {
       return res.status(404).json({ error: "Student not found" });
@@ -32,7 +32,7 @@ async function loginWithUserId(req, res) {
 
     const token = jwt.sign(
       {
-        userId: student["User ID With Hyphens"],
+        userId: student["UID"],
         name: student["Student Name"],
         programme: student["Programme"],
       },
@@ -42,7 +42,7 @@ async function loginWithUserId(req, res) {
 
     // Track login
     loginLogs.push({
-      userId: student["User ID With Hyphens"],
+      userId: student["UID"],
       name: student["Student Name"],
       programme: student["Programme"],
       timestamp: new Date().toISOString(),
@@ -51,7 +51,7 @@ async function loginWithUserId(req, res) {
     res.json({
       token,
       student: {
-        userId: student["User ID With Hyphens"],
+        userId: student["UID"],
         name: student["Student Name"],
         programme: student["Programme"],
         productCode: student["Product code"],

@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken");
-const { getStudentByUserId } = require("../config/googleSheets");
+const { getStudentFromSheet, SHEET_NAMES } = require("../config/googleSheets");
 const { loginLogs } = require("./authController");
 
 // Called BY Forms backend (server-to-server)
@@ -15,7 +15,7 @@ async function generateToken(req, res) {
       return res.status(400).json({ error: "User ID is required" });
     }
 
-    const student = await getStudentByUserId(userId);
+    const student = await getStudentFromSheet(SHEET_NAMES.USER_BASIC_DETAILS, userId);
     if (!student) {
       return res.status(404).json({ error: "Student not found" });
     }
@@ -33,7 +33,7 @@ async function generateToken(req, res) {
 
     // Short-lived token (5 minutes) for SSO handoff
     const token = jwt.sign(
-      { userId: student["User ID With Hyphens"], type: "sso_handoff" },
+      { userId: student["UID"], type: "sso_handoff" },
       process.env.JWT_SECRET,
       { expiresIn: "5m" }
     );
@@ -64,7 +64,7 @@ async function validateToken(req, res) {
       return res.status(401).json({ error: "Invalid token type" });
     }
 
-    const student = await getStudentByUserId(decoded.userId);
+    const student = await getStudentFromSheet(SHEET_NAMES.USER_BASIC_DETAILS, decoded.userId);
     if (!student) {
       return res.status(404).json({ error: "Student not found" });
     }
@@ -72,7 +72,7 @@ async function validateToken(req, res) {
     // Create full 24h session JWT
     const sessionToken = jwt.sign(
       {
-        userId: student["User ID With Hyphens"],
+        userId: student["UID"],
         name: student["Student Name"],
         programme: student["Programme"],
       },
@@ -82,7 +82,7 @@ async function validateToken(req, res) {
 
     // Track login
     loginLogs.push({
-      userId: student["User ID With Hyphens"],
+      userId: student["UID"],
       name: student["Student Name"],
       programme: student["Programme"],
       timestamp: new Date().toISOString(),
@@ -91,7 +91,7 @@ async function validateToken(req, res) {
     res.json({
       token: sessionToken,
       student: {
-        userId: student["User ID With Hyphens"],
+        userId: student["UID"],
         name: student["Student Name"],
         programme: student["Programme"],
         productCode: student["Product code"],

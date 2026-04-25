@@ -40,6 +40,9 @@ export const ssoAPI = {
 export const paymentAPI = {
   getSummary: () => api.get("/payments/summary"),
   getNBFCDetails: () => api.get("/payments/nbfc"),
+  getCompanyLogs: () => api.get("/payments/company-logs"),
+  getFlexLogs: () => api.get("/payments/flex-logs"),
+  getNBFCAllRows: () => api.get("/payments/nbfc-details"),
   submitFeedback: (message) => api.post("/payments/feedback", { message }),
 };
 

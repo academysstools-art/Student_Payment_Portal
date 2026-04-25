@@ -177,8 +177,8 @@ function StudentsTab() {
               <thead>
                 <tr className="text-left text-[9px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-50">
                   <th className="px-4 py-2">User ID</th>
+                  <th className="px-4 py-2">Name</th>
                   <th className="px-4 py-2">Programme</th>
-                  <th className="px-4 py-2">Status</th>
                   <th className="px-4 py-2">Remaining</th>
                   <th className="px-4 py-2"></th>
                 </tr>
@@ -187,12 +187,8 @@ function StudentsTab() {
                 {results.map((s) => (
                   <tr key={s.userId}>
                     <td className="px-4 py-2.5 text-xs font-black text-blue-900">{s.userId}</td>
+                    <td className="px-4 py-2.5 text-xs font-bold text-slate-700">{s.name || "--"}</td>
                     <td className="px-4 py-2.5 text-xs text-slate-600">{s.programme}</td>
-                    <td className="px-4 py-2.5">
-                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px] font-black uppercase">
-                        {s.productStatus || "--"}
-                      </span>
-                    </td>
                     <td className="px-4 py-2.5 text-xs font-black text-slate-900">{fmt(s.remainingAmountToPay)}</td>
                     <td className="px-4 py-2.5">
                       <button
@@ -224,11 +220,10 @@ function StudentsTab() {
           </div>
           <div className="p-4 space-y-4">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <DetailItem label="Name" value={selected.name} />
               <DetailItem label="Programme" value={selected.programme} />
               <DetailItem label="Product Code" value={selected.productCode} />
               <DetailItem label="LPOAD" value={selected.lpoad} />
-              <DetailItem label="Payment Plan" value={selected.paymentPlanType} />
-              <DetailItem label="Product Status" value={selected.productStatus} />
               <DetailItem label="Total Fee" value={fmt(selected.totalProgrammeFee)} />
               <DetailItem label="Discount" value={fmt(selected.discountApplied)} />
               <DetailItem label="Net Payable" value={fmt(selected.totalFeePayable)} />
@@ -237,34 +232,81 @@ function StudentsTab() {
               <DetailItem label="NBFC Covered" value={fmt(selected.nbfcLoanAmountCovered)} />
               <DetailItem label="Total Covered" value={fmt(selected.totalAmountCovered)} />
               <DetailItem label="Remaining" value={fmt(selected.remainingAmountToPay)} highlight />
-              <DetailItem label="Flex Status" value={selected.flexCurrentStatus} />
-              <DetailItem label="Current NBFC" value={selected.currentNBFC} />
-              <DetailItem label="NBFC Status" value={selected.currentNBFCStatus} />
             </div>
-            {(selected.nbfc1?.name || selected.nbfc2?.name) && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {selected.nbfc1?.name && (
-                  <div className="bg-slate-50 p-3 rounded-lg">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">NBFC 1</p>
-                    <p className="text-xs font-black text-slate-900">{selected.nbfc1.name}</p>
-                    <div className="flex gap-4 mt-1 text-[10px] text-slate-500">
-                      <span>Loan: {fmt(selected.nbfc1.loanAmount)}</span>
-                      <span>EMI: {fmt(selected.nbfc1.emiAmount)}</span>
-                      <span>{selected.nbfc1.loanTenure}</span>
+
+            {/* NBFC Rows */}
+            {selected.nbfcRows?.length > 0 && (
+              <div>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">NBFC Details</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {selected.nbfcRows.map((row, i) => (
+                    <div key={i} className="bg-slate-50 p-3 rounded-lg">
+                      <p className="text-xs font-black text-slate-900">{row.nbfcName}</p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-[10px] text-slate-500">
+                        <span>Loan: {fmt(row.loanAmount)}</span>
+                        <span>EMI: {fmt(row.emiAmount)}</span>
+                        <span>{row.tenure}</span>
+                        <span className="font-bold">{row.status}</span>
+                      </div>
                     </div>
-                  </div>
-                )}
-                {selected.nbfc2?.name && (
-                  <div className="bg-slate-50 p-3 rounded-lg">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">NBFC 2</p>
-                    <p className="text-xs font-black text-slate-900">{selected.nbfc2.name}</p>
-                    <div className="flex gap-4 mt-1 text-[10px] text-slate-500">
-                      <span>Loan: {fmt(selected.nbfc2.loanAmount)}</span>
-                      <span>EMI: {fmt(selected.nbfc2.emiAmount)}</span>
-                      <span>{selected.nbfc2.loanTenure}</span>
-                    </div>
-                  </div>
-                )}
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Company Payment Logs */}
+            {selected.companyLogs?.length > 0 && (
+              <div>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Company Payment Logs</p>
+                <div className="overflow-x-auto bg-slate-50 rounded-lg">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="text-left text-[9px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-200">
+                        <th className="px-3 py-2">Date</th>
+                        <th className="px-3 py-2">Amount</th>
+                        <th className="px-3 py-2">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {selected.companyLogs.map((log, i) => (
+                        <tr key={i}>
+                          <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paidDate || "--"}</td>
+                          <td className="px-3 py-1.5 text-[10px] font-bold text-slate-900">{fmt(log.paidAmount)}</td>
+                          <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paymentStatus || "--"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Flex Payment Logs */}
+            {selected.flexLogs?.length > 0 && (
+              <div>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Flex Payment Logs</p>
+                <div className="overflow-x-auto bg-slate-50 rounded-lg">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="text-left text-[9px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-200">
+                        <th className="px-3 py-2">Date</th>
+                        <th className="px-3 py-2">Amount</th>
+                        <th className="px-3 py-2">Status</th>
+                        <th className="px-3 py-2">Mode</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {selected.flexLogs.map((log, i) => (
+                        <tr key={i}>
+                          <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paidDate || "--"}</td>
+                          <td className="px-3 py-1.5 text-[10px] font-bold text-slate-900">{fmt(log.paidAmount)}</td>
+                          <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paymentStatus || "--"}</td>
+                          <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paymentMode || "--"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>

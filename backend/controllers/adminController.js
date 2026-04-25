@@ -1,5 +1,10 @@
 const jwt = require("jsonwebtoken");
-const { getSheetData, getStudentByUserId } = require("../config/googleSheets");
+const {
+  getSheetData,
+  getStudentFromSheet,
+  getStudentRowsFromSheet,
+  SHEET_NAMES,
+} = require("../config/googleSheets");
 const { loginLogs } = require("./authController");
 
 // Hardcoded admin credentials
@@ -58,22 +63,34 @@ async function searchStudents(req, res) {
       return res.json([]);
     }
 
-    const allData = await getSheetData();
-    const results = allData
+    const [basicData, feeData] = await Promise.all([
+      getSheetData(SHEET_NAMES.USER_BASIC_DETAILS),
+      getSheetData(SHEET_NAMES.USER_FEE_DETAILS),
+    ]);
+
+    // Index fee data by UID for fast lookup
+    const feeByUid = {};
+    for (const row of feeData) {
+      if (row["UID"]) feeByUid[row["UID"].trim().toLowerCase()] = row;
+    }
+
+    const results = basicData
       .filter((row) => {
-        const uid = (row["User ID With Hyphens"] || "").toLowerCase();
+        const uid = (row["UID"] || "").toLowerCase();
         return uid.includes(query);
       })
       .slice(0, 20)
-      .map((row) => ({
-        userId: row["User ID With Hyphens"],
-        name: row["Student Name"],
-        programme: row["Programme"],
-        productStatus: row["product_status"],
-        totalFeePayable: row["Total Fee Payble"],
-        totalAmountCovered: row["Total Amoubt Covered"],
-        remainingAmountToPay: row["Remaining Amount to Pay"],
-      }));
+      .map((row) => {
+        const fee = feeByUid[(row["UID"] || "").trim().toLowerCase()] || {};
+        return {
+          userId: row["UID"],
+          name: row["Student Name"],
+          programme: row["Programme"],
+          totalFeePayable: fee["Total Fee Payble"] || "",
+          totalAmountCovered: fee["Total Amount Covered"] || "",
+          remainingAmountToPay: fee["Remaining Amount to Pay"] || "",
+        };
+      });
 
     res.json(results);
   } catch (error) {
@@ -85,45 +102,52 @@ async function searchStudents(req, res) {
 async function getStudentDetails(req, res) {
   try {
     const { userId } = req.params;
-    const student = await getStudentByUserId(userId);
 
-    if (!student) {
+    const [basicDetails, feeDetails, nbfcRows, companyLogs, flexLogs] = await Promise.all([
+      getStudentFromSheet(SHEET_NAMES.USER_BASIC_DETAILS, userId),
+      getStudentFromSheet(SHEET_NAMES.USER_FEE_DETAILS, userId),
+      getStudentRowsFromSheet(SHEET_NAMES.NBFC_DISBURSED_DETAILS, userId),
+      getStudentRowsFromSheet(SHEET_NAMES.PAYMENT_TO_COMPANY_LOGS, userId),
+      getStudentRowsFromSheet(SHEET_NAMES.FLEX_PAYMENT_LOGS, userId),
+    ]);
+
+    if (!basicDetails) {
       return res.status(404).json({ error: "Student not found" });
     }
 
     res.json({
-      userId: student["User ID With Hyphens"],
-      name: student["Student Name"],
-      programme: student["Programme"],
-      productCode: student["Product code"],
-      lpoad: student["LPOAD"],
-      paymentPlanType: student["Payment_Plan_Type"],
-      productStatus: student["product_status"],
-      totalProgrammeFee: student["Total Programme Fee"],
-      discountApplied: student["Discount Applied"],
-      totalFeePayable: student["Total Fee Payble"],
-      amountPaidInFlex: student["Amount Paid in Jodo Flex"],
-      amountPaidToNxtWave: student["Amount Paid to NxtWave"],
-      nbfcLoanAmountCovered: student["Nbfc Loan Amount Covered"],
-      totalAmountCovered: student["Total Amoubt Covered"],
-      remainingAmountToPay: student["Remaining Amount to Pay"],
-      flexCurrentStatus: student["Flex current status"],
-      currentNBFC: student["Current NBFC"],
-      currentNBFCStatus: student["Current NBFC Status"],
-      nbfc1: {
-        name: student["NBFC 1_Name"],
-        status: student["NBFC 1_Status"],
-        loanAmount: student["NBFC 1_Loan Amount"],
-        loanTenure: student["NBFC 1_Loan Tenure"],
-        emiAmount: student["NBFC 1_EMI Amount"],
-      },
-      nbfc2: {
-        name: student["NBFC 2_Name"],
-        status: student["NBFC 2_Status"],
-        loanAmount: student["NBFC 2_Loan Amount"],
-        loanTenure: student["NBFC 2_Loan Tenure"],
-        emiAmount: student["NBFC 2_EMI Amount"],
-      },
+      userId: basicDetails["UID"],
+      name: basicDetails["Student Name"],
+      programme: basicDetails["Programme"],
+      productCode: basicDetails["Product code"],
+      lpoad: basicDetails["LPOAD"],
+      totalProgrammeFee: feeDetails?.["Total Programme Fee"] || "",
+      discountApplied: feeDetails?.["Discount Applied"] || "",
+      totalFeePayable: feeDetails?.["Total Fee Payble"] || "",
+      amountPaidInFlex: feeDetails?.["Amount Paid in Jodo Flex"] || "",
+      amountPaidToNxtWave: feeDetails?.["Amount Paid to NxtWave"] || "",
+      nbfcLoanAmountCovered: feeDetails?.["Nbfc Loan Amount Covered"] || "",
+      totalAmountCovered: feeDetails?.["Total Amount Covered"] || "",
+      remainingAmountToPay: feeDetails?.["Remaining Amount to Pay"] || "",
+      nbfcRows: (nbfcRows || []).map((r) => ({
+        nbfcName: r["NBFC Name"],
+        loanAmount: r["Loan Amount"],
+        tenure: r["Tenure (Start Month and End Month)"],
+        emiAmount: r["EMI Amount"],
+        status: r["Status"],
+        dueDate: r["Due Date (Tenure end Month + 1Month)"],
+      })),
+      companyLogs: (companyLogs || []).map((r) => ({
+        paidDate: r["Paid Date"],
+        paidAmount: r["Paid Amount"],
+        paymentStatus: r["Payment Status"],
+      })),
+      flexLogs: (flexLogs || []).map((r) => ({
+        paidDate: r["Paid Date"],
+        paidAmount: r["Paid Amount"],
+        paymentStatus: r["Payment Status"],
+        paymentMode: r["Payment Mode"],
+      })),
     });
   } catch (error) {
     console.error("Student details error:", error.message);
@@ -160,7 +184,23 @@ function submitFeedback(req, res) {
 
 async function exportCSV(req, res) {
   try {
-    const allData = await getSheetData();
+    const [basicData, feeData] = await Promise.all([
+      getSheetData(SHEET_NAMES.USER_BASIC_DETAILS),
+      getSheetData(SHEET_NAMES.USER_FEE_DETAILS),
+    ]);
+
+    // Index fee data by UID
+    const feeByUid = {};
+    for (const row of feeData) {
+      if (row["UID"]) feeByUid[row["UID"].trim().toLowerCase()] = row;
+    }
+
+    // Merge basic + fee
+    const allData = basicData.map((basic) => {
+      const fee = feeByUid[(basic["UID"] || "").trim().toLowerCase()] || {};
+      return { ...basic, ...fee };
+    });
+
     if (allData.length === 0) {
       return res.status(404).json({ error: "No data found" });
     }

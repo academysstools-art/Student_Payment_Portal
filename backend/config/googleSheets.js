@@ -2,6 +2,14 @@ const { google } = require("googleapis");
 
 let sheetsInstance = null;
 
+const SHEET_NAMES = {
+  USER_BASIC_DETAILS: "Users Basic Details",
+  USER_FEE_DETAILS: "User Fee Details",
+  PAYMENT_TO_COMPANY_LOGS: "Payment to Company logs",
+  FLEX_PAYMENT_LOGS: "Flex Payment logs",
+  NBFC_DISBURSED_DETAILS: "NBFC Disbursed details",
+};
+
 function getGoogleSheetsClient() {
   if (sheetsInstance) return sheetsInstance;
 
@@ -15,11 +23,9 @@ function getGoogleSheetsClient() {
   // Handle private key: Vercel may store \n as literal or actual newlines
   let privateKey = rawKey;
   if (privateKey) {
-    // If the key contains literal \n (not actual newlines), convert them
     if (!privateKey.includes("\n") || privateKey.includes("\\n")) {
       privateKey = privateKey.replace(/\\n/g, "\n");
     }
-    // Remove surrounding quotes if present
     privateKey = privateKey.replace(/^["']|["']$/g, "");
   }
   console.log("[Sheets] Private key has real newlines:", privateKey ? privateKey.includes("\n") : false);
@@ -37,18 +43,18 @@ function getGoogleSheetsClient() {
   return sheetsInstance;
 }
 
-async function getSheetData() {
+async function getSheetData(sheetName) {
   const sheets = getGoogleSheetsClient();
   const spreadsheetId = process.env.GOOGLE_SPREADSHEET_ID;
-  const sheetName = (process.env.GOOGLE_SHEET_NAME || "Sheet1").trim();
+  const targetSheet = (sheetName || process.env.GOOGLE_SHEET_NAME || "Sheet1").trim();
 
   console.log("[Sheets] Spreadsheet ID:", spreadsheetId);
-  console.log("[Sheets] Sheet name:", JSON.stringify(sheetName));
+  console.log("[Sheets] Sheet name:", JSON.stringify(targetSheet));
 
   try {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `${sheetName}`,
+      range: `'${targetSheet}'`,
     });
 
     const rows = response.data.values;
@@ -73,14 +79,35 @@ async function getSheetData() {
   }
 }
 
-async function getStudentByUserId(userId) {
-  const data = await getSheetData();
+// Find single row by UID
+async function getStudentFromSheet(sheetName, uid) {
+  const data = await getSheetData(sheetName);
   return data.find(
     (row) =>
-      row["User ID With Hyphens"] &&
-      row["User ID With Hyphens"].trim().toLowerCase() ===
-        userId.trim().toLowerCase()
+      row["UID"] &&
+      row["UID"].trim().toLowerCase() === uid.trim().toLowerCase()
   );
 }
 
-module.exports = { getSheetData, getStudentByUserId };
+// Find ALL rows matching UID (for log sheets with multiple rows per student)
+async function getStudentRowsFromSheet(sheetName, uid) {
+  const data = await getSheetData(sheetName);
+  return data.filter(
+    (row) =>
+      row["UID"] &&
+      row["UID"].trim().toLowerCase() === uid.trim().toLowerCase()
+  );
+}
+
+// Backward-compatible wrapper
+async function getStudentByUserId(userId) {
+  return getStudentFromSheet(SHEET_NAMES.USER_BASIC_DETAILS, userId);
+}
+
+module.exports = {
+  getSheetData,
+  getStudentByUserId,
+  getStudentFromSheet,
+  getStudentRowsFromSheet,
+  SHEET_NAMES,
+};

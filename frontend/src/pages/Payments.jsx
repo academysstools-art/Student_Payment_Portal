@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { paymentAPI } from "../services/api";
+import PaymentHistoryModal from "../components/PaymentHistoryModal";
 import {
   Loader2,
   CreditCard,
@@ -33,6 +34,21 @@ export default function Payments() {
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Modal states
+  const [companyLogsModal, setCompanyLogsModal] = useState(false);
+  const [flexLogsModal, setFlexLogsModal] = useState(false);
+  const [nbfcDetailsModal, setNbfcDetailsModal] = useState(false);
+
+  // Log data (fetched on demand)
+  const [companyLogs, setCompanyLogs] = useState(null);
+  const [flexLogs, setFlexLogs] = useState(null);
+  const [nbfcAllRows, setNbfcAllRows] = useState(null);
+
+  // Loading states for logs
+  const [companyLogsLoading, setCompanyLogsLoading] = useState(false);
+  const [flexLogsLoading, setFlexLogsLoading] = useState(false);
+  const [nbfcDetailsLoading, setNbfcDetailsLoading] = useState(false);
+
   useEffect(() => {
     async function fetchData() {
       try {
@@ -54,6 +70,48 @@ export default function Payments() {
   function handleLogout() {
     logout();
     navigate("/");
+  }
+
+  async function openCompanyLogsModal() {
+    setCompanyLogsModal(true);
+    if (companyLogs === null) {
+      setCompanyLogsLoading(true);
+      try {
+        const res = await paymentAPI.getCompanyLogs();
+        setCompanyLogs(res.data.logs);
+      } catch {
+        setCompanyLogs([]);
+      }
+      setCompanyLogsLoading(false);
+    }
+  }
+
+  async function openFlexLogsModal() {
+    setFlexLogsModal(true);
+    if (flexLogs === null) {
+      setFlexLogsLoading(true);
+      try {
+        const res = await paymentAPI.getFlexLogs();
+        setFlexLogs(res.data.logs);
+      } catch {
+        setFlexLogs([]);
+      }
+      setFlexLogsLoading(false);
+    }
+  }
+
+  async function openNbfcDetailsModal() {
+    setNbfcDetailsModal(true);
+    if (nbfcAllRows === null) {
+      setNbfcDetailsLoading(true);
+      try {
+        const res = await paymentAPI.getNBFCAllRows();
+        setNbfcAllRows(res.data.details);
+      } catch {
+        setNbfcAllRows([]);
+      }
+      setNbfcDetailsLoading(false);
+    }
   }
 
   const initials = student?.name
@@ -110,15 +168,14 @@ export default function Payments() {
   const jodoFlex = parseFloat(summary?.amountPaidInFlex) || 0;
   const emiLoan = parseFloat(summary?.nbfcLoanAmountCovered) || 0;
 
-  const hasNBFC1 = nbfc?.nbfc1?.name && nbfc.nbfc1.name.trim() !== "";
-  const hasNBFC2 = nbfc?.nbfc2?.name && nbfc.nbfc2.name.trim() !== "";
-  const hasAnyNBFC = hasNBFC1 || hasNBFC2;
-
-  // Detect if an NBFC is Jodo Flex — show those in the Jodo card, not EMI card
-  const isNBFC1JodoFlex = hasNBFC1 && nbfc.nbfc1.name.toLowerCase().includes("jodo");
-  const isNBFC2JodoFlex = hasNBFC2 && nbfc.nbfc2.name.toLowerCase().includes("jodo");
-  const hasEMINBFC = (hasNBFC1 && !isNBFC1JodoFlex) || (hasNBFC2 && !isNBFC2JodoFlex);
-  const showJodoCard = jodoFlex > 0 || isNBFC1JodoFlex || isNBFC2JodoFlex;
+  // Dynamic NBFC groups from new API
+  const nbfcGroups = nbfc?.nbfcGroups || [];
+  const hasAnyNBFC = nbfcGroups.length > 0;
+  const emiGroups = nbfcGroups.filter(
+    (g) => !g.nbfcName.toLowerCase().includes("jodo")
+  );
+  const hasEMINBFC = emiGroups.length > 0;
+  const showJodoCard = jodoFlex > 0;
 
   const statusColor = (status) => {
     if (!status) return "bg-slate-100 text-slate-600";
@@ -142,13 +199,12 @@ export default function Payments() {
         />
       )}
 
-      {/* ===== SIDEBAR (7: regular width, white, with text labels) ===== */}
+      {/* ===== SIDEBAR ===== */}
       <aside
         className={`fixed top-0 left-0 h-full w-[240px] bg-white border-r border-slate-200 z-50 flex flex-col transition-transform duration-300 lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        {/* Close button mobile */}
         <button
           onClick={() => setSidebarOpen(false)}
           className="lg:hidden absolute top-4 right-4 text-slate-400 hover:text-slate-600 cursor-pointer"
@@ -156,7 +212,6 @@ export default function Payments() {
           <X size={18} />
         </button>
 
-        {/* Logo */}
         <div className="px-5 py-5 border-b border-slate-100">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 bg-indigo-600 text-white rounded-xl flex items-center justify-center">
@@ -173,7 +228,6 @@ export default function Payments() {
           </div>
         </div>
 
-        {/* Nav items */}
         <nav className="flex-1 p-4 space-y-1">
           <button
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-indigo-50 text-indigo-700 font-semibold text-sm cursor-pointer"
@@ -184,7 +238,6 @@ export default function Payments() {
           </button>
         </nav>
 
-        {/* User info + Logout */}
         <div className="p-4 border-t border-slate-100">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-9 h-9 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-bold">
@@ -210,7 +263,6 @@ export default function Payments() {
 
       {/* ===== MAIN AREA ===== */}
       <div className="flex-1 lg:ml-[240px] flex flex-col min-h-screen">
-        {/* Top Header */}
         <header className="bg-white border-b border-slate-200 px-5 lg:px-8 py-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -245,9 +297,8 @@ export default function Payments() {
           </div>
         </header>
 
-        {/* Content */}
         <main className="flex-1 px-5 lg:px-8 py-3 space-y-3">
-          {/* (2) EMI Info Banner — light blue */}
+          {/* EMI Info Banner */}
           {hasAnyNBFC && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 flex items-start gap-2">
               <AlertTriangle size={15} className="text-blue-500 mt-0.5 shrink-0" />
@@ -263,12 +314,10 @@ export default function Payments() {
 
           {/* ===== PAYMENT SUMMARY CARD ===== */}
           <div className="bg-gradient-to-br from-[#4338ca] via-[#4f46e5] to-[#7c3aed] rounded-2xl p-4 lg:p-5 text-white shadow-xl shadow-indigo-200/50 relative overflow-hidden">
-            {/* Background decorations */}
             <div className="absolute top-0 right-0 w-72 h-72 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/3" />
             <div className="absolute bottom-0 left-1/3 w-48 h-48 bg-white/5 rounded-full translate-y-1/2" />
 
             <div className="relative z-10">
-              {/* Header */}
               <div className="flex items-center gap-2.5 mb-1">
                 <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
                   <CreditCard size={16} />
@@ -279,9 +328,8 @@ export default function Payments() {
                 Your complete fee breakdown at a glance
               </p>
 
-              {/* Two-column layout */}
               <div className="flex flex-col lg:flex-row lg:justify-between gap-4">
-                {/* LEFT: Fee details — (1) label and value in same row */}
+                {/* LEFT: Fee details */}
                 <div className="flex-1 max-w-sm space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-semibold uppercase tracking-wider text-white/50">
@@ -346,15 +394,9 @@ export default function Payments() {
                           <span className="text-xs text-white/70 block">
                             Jodo Flex Payments
                           </span>
-                          {(() => {
-                            const fs = (summary?.flexCurrentStatus || "Active").toLowerCase();
-                            const isActive = fs.includes("active") || fs.includes("ongoing");
-                            return (
-                              <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded mt-1 inline-block ${isActive ? "bg-amber-500/25 text-amber-300" : "bg-emerald-500/25 text-emerald-300"}`}>
-                                {summary?.flexCurrentStatus || "Active"}
-                              </span>
-                            );
-                          })()}
+                          <span className="text-[9px] font-bold uppercase bg-amber-500/25 text-amber-300 px-1.5 py-0.5 rounded mt-1 inline-block">
+                            Flex
+                          </span>
                         </div>
                         <span className="text-sm font-bold">{fmt(jodoFlex)}</span>
                       </div>
@@ -373,7 +415,7 @@ export default function Payments() {
                       </div>
                     )}
 
-                    {/* (4) Remaining Amount to Pay + renewal date */}
+                    {/* Remaining Amount to Pay + renewal date */}
                     <div className="border-t border-white/20 pt-2">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-white/50">
@@ -381,7 +423,7 @@ export default function Payments() {
                         </span>
                         {summary?.lpoad && (
                           <span className="text-[10px] font-semibold uppercase tracking-wider text-white/50">
-                            Renewal Due
+                            Due starts from
                           </span>
                         )}
                       </div>
@@ -405,7 +447,6 @@ export default function Payments() {
                     </div>
                   </div>
 
-                  {/* (5) Renewal info text */}
                   <div className="mt-3 bg-white/10 rounded-lg px-3 py-2 border border-white/10">
                     <p className="text-[10px] text-white/70 leading-relaxed">
                       We will inform you before your renewal date and our team
@@ -423,7 +464,7 @@ export default function Payments() {
               Covered Amount Details
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[1fr_1fr_1.5fr] gap-3">
-              {/* Card 1: Amount Paid to NxtWave — simple amount + status */}
+              {/* Card 1: Amount Paid to NxtWave */}
               {paidNxtWave > 0 && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col">
                   <div className="flex items-center justify-between mb-2">
@@ -450,14 +491,17 @@ export default function Payments() {
                       {fmt(paidNxtWave)}
                     </p>
                   </div>
-                  <button className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5 mt-auto">
+                  <button
+                    onClick={openCompanyLogsModal}
+                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5 mt-auto"
+                  >
                     <CreditCard size={13} />
                     View Payment History
                   </button>
                 </div>
               )}
 
-              {/* Card 2: Jodo Flex Payments — includes NBFC rows if NBFC is Jodo Flex */}
+              {/* Card 2: Jodo Flex Payments */}
               {showJodoCard && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col">
                   <div className="flex items-center justify-between mb-2">
@@ -469,71 +513,29 @@ export default function Payments() {
                         Jodo Flex Payments
                       </h4>
                     </div>
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusColor(summary?.flexCurrentStatus || "Active")}`}
-                    >
-                      {summary?.flexCurrentStatus || "Active"}
-                    </span>
                   </div>
                   <p className="text-[11px] text-slate-500 mb-2">
                     Payments made through Jodo Flex
                   </p>
-                  <div className="bg-slate-50 rounded-lg border border-slate-100 p-3 mb-3 flex-1 space-y-2">
-                    {/* Jodo Flex NBFC details — vertical layout */}
-                    {isNBFC1JodoFlex && (
-                      <>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Loan Amount</span>
-                          <span className="text-sm font-bold text-slate-900">{fmt(nbfc.nbfc1.loanAmount)}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Tenure</span>
-                          <span className="text-sm font-bold text-slate-900">{nbfc.nbfc1.loanTenure || "--"}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">EMI Amount</span>
-                          <span className="text-sm font-bold text-slate-900">{fmt(nbfc.nbfc1.emiAmount)}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Status</span>
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusColor(nbfc.nbfc1.status)}`}>
-                            {nbfc.nbfc1.status || "--"}
-                          </span>
-                        </div>
-                      </>
-                    )}
-                    {isNBFC2JodoFlex && (
-                      <>
-                        <div className="border-t border-slate-200 pt-2.5" />
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Loan Amount</span>
-                          <span className="text-sm font-bold text-slate-900">{fmt(nbfc.nbfc2.loanAmount)}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Tenure</span>
-                          <span className="text-sm font-bold text-slate-900">{nbfc.nbfc2.loanTenure || "--"}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">EMI Amount</span>
-                          <span className="text-sm font-bold text-slate-900">{fmt(nbfc.nbfc2.emiAmount)}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Status</span>
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusColor(nbfc.nbfc2.status)}`}>
-                            {nbfc.nbfc2.status || "--"}
-                          </span>
-                        </div>
-                      </>
-                    )}
+                  <div className="bg-slate-50 rounded-lg border border-slate-100 p-3 mb-3 flex-1">
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold mb-0.5">
+                      Total Amount Paid
+                    </p>
+                    <p className="text-xl font-black text-slate-900">
+                      {fmt(jodoFlex)}
+                    </p>
                   </div>
-                  <button className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5 mt-auto">
+                  <button
+                    onClick={openFlexLogsModal}
+                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5 mt-auto"
+                  >
                     <Wallet size={13} />
                     View Payment History
                   </button>
                 </div>
               )}
 
-              {/* Card 3: EMI Loan Details — only non-Jodo-Flex NBFCs */}
+              {/* Card 3: EMI Loan Details — dynamic NBFC groups */}
               {hasEMINBFC && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col">
                   <div className="flex items-center gap-2.5 mb-3">
@@ -549,60 +551,44 @@ export default function Payments() {
                       <thead>
                         <tr className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-200">
                           <th className="text-left py-2.5 px-3">NBFC</th>
-                          <th className="text-left py-2.5 px-3">Loan Amt</th>
+                          <th className="text-left py-2.5 px-3">Total Loan</th>
                           <th className="text-left py-2.5 px-3">Tenure</th>
-                          <th className="text-left py-2.5 px-3">EMI</th>
                           <th className="text-right py-2.5 px-3">Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {hasNBFC1 && !isNBFC1JodoFlex && (
-                          <tr>
+                        {emiGroups.map((group) => (
+                          <tr key={group.nbfcName}>
                             <td className="py-2.5 px-3 font-semibold text-slate-700 whitespace-nowrap">
-                              {nbfc.nbfc1.name}
+                              {group.nbfcName}
                             </td>
                             <td className="py-2.5 px-3 text-slate-800 font-bold">
-                              {fmt(nbfc.nbfc1.loanAmount)}
+                              {fmt(group.totalLoanAmount)}
                             </td>
                             <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
-                              {nbfc.nbfc1.loanTenure || "--"}
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-800 font-bold">
-                              {fmt(nbfc.nbfc1.emiAmount)}
+                              {group.rows[0]?.tenure || "--"}
                             </td>
                             <td className="py-2.5 px-3 text-right">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusColor(nbfc.nbfc1.status)}`}>
-                                {nbfc.nbfc1.status || "--"}
-                              </span>
+                              {group.rows[0] && (
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusColor(group.rows[0].status)}`}>
+                                  {group.rows[0].status || "--"}
+                                </span>
+                              )}
                             </td>
                           </tr>
-                        )}
-                        {hasNBFC2 && !isNBFC2JodoFlex && (
-                          <tr>
-                            <td className="py-2.5 px-3 font-semibold text-slate-700 whitespace-nowrap">
-                              {nbfc.nbfc2.name}
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-800 font-bold">
-                              {fmt(nbfc.nbfc2.loanAmount)}
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
-                              {nbfc.nbfc2.loanTenure || "--"}
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-800 font-bold">
-                              {fmt(nbfc.nbfc2.emiAmount)}
-                            </td>
-                            <td className="py-2.5 px-3 text-right">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusColor(nbfc.nbfc2.status)}`}>
-                                {nbfc.nbfc2.status || "--"}
-                              </span>
-                            </td>
-                          </tr>
-                        )}
+                        ))}
                       </tbody>
                     </table>
                   </div>
-                  <p className="text-[10px] text-slate-400 mt-auto pt-3 leading-relaxed">
-                    * This loan amount is financed to NxtWave by the respective NBFC which you would payback to the NBFC in EMIs.
+                  <button
+                    onClick={openNbfcDetailsModal}
+                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5 mt-3"
+                  >
+                    <CreditCard size={13} />
+                    View History
+                  </button>
+                  <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
+                    We will communicate with you in advance of your due date, and our team will guide you through the process.
                   </p>
                 </div>
               )}
@@ -637,16 +623,14 @@ export default function Payments() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {hasNBFC1 && !isNBFC1JodoFlex && (
-                    <button className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer">
-                      {nbfc.nbfc1.name}
+                  {emiGroups.map((group) => (
+                    <button
+                      key={group.nbfcName}
+                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      {group.nbfcName}
                     </button>
-                  )}
-                  {hasNBFC2 && !isNBFC2JodoFlex && (
-                    <button className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer">
-                      {nbfc.nbfc2.name}
-                    </button>
-                  )}
+                  ))}
                 </div>
               </div>
             )}
@@ -670,6 +654,50 @@ export default function Payments() {
       >
         <MessageCircle size={22} />
       </button>
+
+      {/* ===== MODALS ===== */}
+      <PaymentHistoryModal
+        isOpen={companyLogsModal}
+        onClose={() => setCompanyLogsModal(false)}
+        title="NxtWave Payment History"
+        loading={companyLogsLoading}
+        columns={[
+          { key: "paidDate", label: "Date" },
+          { key: "paidAmount", label: "Amount", isAmount: true },
+          { key: "paymentStatus", label: "Status", isStatus: true },
+        ]}
+        data={companyLogs || []}
+      />
+
+      <PaymentHistoryModal
+        isOpen={flexLogsModal}
+        onClose={() => setFlexLogsModal(false)}
+        title="Jodo Flex Payment History"
+        loading={flexLogsLoading}
+        columns={[
+          { key: "paidDate", label: "Date" },
+          { key: "paidAmount", label: "Amount", isAmount: true },
+          { key: "paymentStatus", label: "Status", isStatus: true },
+          { key: "paymentMode", label: "Mode" },
+        ]}
+        data={flexLogs || []}
+      />
+
+      <PaymentHistoryModal
+        isOpen={nbfcDetailsModal}
+        onClose={() => setNbfcDetailsModal(false)}
+        title="EMI Disbursement Details"
+        loading={nbfcDetailsLoading}
+        columns={[
+          { key: "nbfcName", label: "NBFC" },
+          { key: "loanAmount", label: "Loan Amt", isAmount: true },
+          { key: "tenure", label: "Tenure" },
+          { key: "emiAmount", label: "EMI", isAmount: true },
+          { key: "status", label: "Status", isStatus: true },
+          { key: "dueDate", label: "Due Date" },
+        ]}
+        data={(nbfcAllRows || []).filter(r => !r.nbfcName?.toLowerCase().includes("jodo"))}
+      />
     </div>
   );
 }

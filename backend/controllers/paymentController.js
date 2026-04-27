@@ -134,10 +134,40 @@ async function getNBFCAllRows(req, res) {
   }
 }
 
+async function getNBFCContacts(req, res) {
+  try {
+    const { getSheetData } = require("../config/googleSheets");
+    const rows = await getSheetData(SHEET_NAMES.NBFC_SUPPORT_CONTACTS);
+
+    // Find columns dynamically (case-insensitive) to handle whitespace/case variations
+    const findValue = (row, ...candidates) => {
+      const keys = Object.keys(row);
+      for (const candidate of candidates) {
+        const match = keys.find(k => k.trim().toLowerCase() === candidate.toLowerCase());
+        if (match && row[match]) return row[match].trim();
+      }
+      return "";
+    };
+
+    const contacts = (rows || []).map((row) => ({
+      nbfcName: findValue(row, "NBFC", "NBFC Name"),
+      email: findValue(row, "Main ID", "Mail ID", "Email", "Email ID"),
+    }));
+
+    console.log("[NBFC Contacts] Found:", contacts);
+
+    res.json({ contacts });
+  } catch (error) {
+    console.error("NBFC contacts error:", error.message);
+    res.status(500).json({ error: "Failed to fetch NBFC contacts" });
+  }
+}
+
 module.exports = {
   getPaymentSummary,
   getNBFCDetails,
   getCompanyPaymentLogs,
   getFlexPaymentLogs,
   getNBFCAllRows,
+  getNBFCContacts,
 };

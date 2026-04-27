@@ -7,6 +7,7 @@ const {
   getCompanyPaymentLogs,
   getFlexPaymentLogs,
   getNBFCAllRows,
+  getNBFCContacts,
 } = require("../controllers/paymentController");
 const { submitFeedback } = require("../controllers/adminController");
 
@@ -24,6 +25,9 @@ router.get("/flex-logs", authenticateToken, getFlexPaymentLogs);
 
 // GET /api/payments/nbfc-details
 router.get("/nbfc-details", authenticateToken, getNBFCAllRows);
+
+// GET /api/payments/nbfc-contacts
+router.get("/nbfc-contacts", authenticateToken, getNBFCContacts);
 
 // POST /api/payments/feedback
 router.post("/feedback", authenticateToken, submitFeedback);

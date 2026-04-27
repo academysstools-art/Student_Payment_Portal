@@ -43,6 +43,7 @@ export const paymentAPI = {
   getCompanyLogs: () => api.get("/payments/company-logs"),
   getFlexLogs: () => api.get("/payments/flex-logs"),
   getNBFCAllRows: () => api.get("/payments/nbfc-details"),
+  getNBFCContacts: () => api.get("/payments/nbfc-contacts"),
   submitFeedback: (message) => api.post("/payments/feedback", { message }),
 };
 

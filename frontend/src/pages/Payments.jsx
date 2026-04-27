@@ -16,6 +16,7 @@ import {
   MessageCircle,
   HelpCircle,
   MapPin,
+  Info,
 } from "lucide-react";
 
 const fmt = (value) => {
@@ -37,27 +38,28 @@ export default function Payments() {
   // Modal states
   const [companyLogsModal, setCompanyLogsModal] = useState(false);
   const [flexLogsModal, setFlexLogsModal] = useState(false);
-  const [nbfcDetailsModal, setNbfcDetailsModal] = useState(false);
-
   // Log data (fetched on demand)
   const [companyLogs, setCompanyLogs] = useState(null);
   const [flexLogs, setFlexLogs] = useState(null);
-  const [nbfcAllRows, setNbfcAllRows] = useState(null);
 
   // Loading states for logs
   const [companyLogsLoading, setCompanyLogsLoading] = useState(false);
   const [flexLogsLoading, setFlexLogsLoading] = useState(false);
-  const [nbfcDetailsLoading, setNbfcDetailsLoading] = useState(false);
+
+  // NBFC support contacts (name → email mapping)
+  const [nbfcContacts, setNbfcContacts] = useState([]);
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const [summaryRes, nbfcRes] = await Promise.all([
+        const [summaryRes, nbfcRes, contactsRes] = await Promise.all([
           paymentAPI.getSummary(),
           paymentAPI.getNBFCDetails(),
+          paymentAPI.getNBFCContacts(),
         ]);
         setSummary(summaryRes.data);
         setNbfc(nbfcRes.data);
+        setNbfcContacts(contactsRes.data.contacts || []);
       } catch (err) {
         setError(err.response?.data?.error || "Failed to load payment data");
       } finally {
@@ -97,20 +99,6 @@ export default function Payments() {
         setFlexLogs([]);
       }
       setFlexLogsLoading(false);
-    }
-  }
-
-  async function openNbfcDetailsModal() {
-    setNbfcDetailsModal(true);
-    if (nbfcAllRows === null) {
-      setNbfcDetailsLoading(true);
-      try {
-        const res = await paymentAPI.getNBFCAllRows();
-        setNbfcAllRows(res.data.details);
-      } catch {
-        setNbfcAllRows([]);
-      }
-      setNbfcDetailsLoading(false);
     }
   }
 
@@ -280,7 +268,6 @@ export default function Payments() {
                 <div className="flex items-center gap-1.5">
                   <MapPin size={11} className="text-indigo-500" />
                   <span className="text-[11px] font-medium text-slate-500">
-                    {summary?.productCode || "CCBP ACADEMY"},{" "}
                     {summary?.programme || "Programme"}
                   </span>
                 </div>
@@ -317,59 +304,68 @@ export default function Payments() {
             <div className="absolute top-0 right-0 w-72 h-72 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/3" />
             <div className="absolute bottom-0 left-1/3 w-48 h-48 bg-white/5 rounded-full translate-y-1/2" />
 
-            <div className="relative z-10">
-              <div className="flex items-center gap-2.5 mb-1">
-                <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
-                  <CreditCard size={16} />
+            <div className="relative z-10 flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+              {/* LEFT: Title + Fee details */}
+              <div className="flex-1 max-w-sm">
+                <div className="flex items-center gap-2.5 mb-1">
+                  <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+                    <CreditCard size={16} />
+                  </div>
+                  <h3 className="text-base font-bold">Payment Summary</h3>
                 </div>
-                <h3 className="text-base font-bold">Payment Summary</h3>
-              </div>
-              <p className="text-[11px] text-white/60 mb-3 ml-[42px]">
-                Your complete fee breakdown at a glance
-              </p>
+                <p className="text-[11px] text-white/60 mb-3 ml-[42px]">
+                  Your complete fee breakdown at a glance
+                </p>
 
-              <div className="flex flex-col lg:flex-row lg:justify-between gap-4">
-                {/* LEFT: Fee details */}
-                <div className="flex-1 max-w-sm space-y-2">
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-white/50">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-white/80">
                       Total Programme Fee
                     </span>
                     <span className="text-lg font-black">{fmt(totalFee)}</span>
                   </div>
                   {discount > 0 && (
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider text-white/50">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-white/80">
                         Discount Applied
                       </span>
-                      <span className="text-lg font-black text-emerald-300">
+                      <span className="text-lg font-black text-white">
                         -{fmt(discount)}
                       </span>
                     </div>
                   )}
                   <div className="border-t border-white/15 pt-2 flex items-center justify-between">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-white/50">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-white/80">
                       Total Fee Payable
                     </span>
                     <span className="text-lg font-black">{fmt(payable)}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-white/50">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-white/80 flex items-center gap-1 group relative">
                       Total Amount Covered
+                      <Info size={11} className="text-white/50 cursor-help" />
+                      <span className="absolute bottom-full left-0 mb-1 hidden group-hover:block bg-black/90 text-white text-[10px] rounded-lg px-3 py-2 w-56 leading-relaxed z-50">
+                        Includes payments made to NxtWave and via Jodo Flex, along with loan amounts financed by NBFC partners.
+                      </span>
                     </span>
                     <span className="text-lg font-black">{fmt(totalCovered)}</span>
                   </div>
                   <div className="border-t border-white/15 pt-2 flex items-center justify-between">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-white/70">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-white/70 flex items-center gap-1 group relative">
                       Remaining Amount to Pay
+                      <Info size={11} className="text-white/50 cursor-help" />
+                      <span className="absolute bottom-full left-0 mb-1 hidden group-hover:block bg-black/90 text-white text-[10px] rounded-lg px-3 py-2 w-56 leading-relaxed z-50">
+                        Amount payable after considering your payments made to NxtWave and via Jodo Flex, along with loan amounts financed by NBFC partners.
+                      </span>
                     </span>
                     <span className="text-lg font-black text-amber-300">
                       {fmt(remaining)}
                     </span>
                   </div>
                 </div>
+              </div>
 
-                {/* RIGHT: Breakdown sub-card */}
+              {/* RIGHT: Breakdown sub-card */}
                 <div className="lg:w-[320px] bg-white/15 backdrop-blur-sm rounded-xl p-4 border border-white/20 self-start">
                   <h4 className="text-[11px] font-bold uppercase tracking-wider text-white/70 mb-3">
                     Total Amount Covered - Breakdown
@@ -394,9 +390,15 @@ export default function Payments() {
                           <span className="text-xs text-white/70 block">
                             Jodo Flex Payments
                           </span>
-                          <span className="text-[9px] font-bold uppercase bg-amber-500/25 text-amber-300 px-1.5 py-0.5 rounded mt-1 inline-block">
-                            Flex
-                          </span>
+                          {nbfcGroups.some(g => g.nbfcName.toLowerCase().includes("jodo") && g.rows.some(r => r.status?.toLowerCase() === "active")) ? (
+                            <span className="text-[9px] font-bold uppercase bg-amber-500/25 text-amber-300 px-1.5 py-0.5 rounded mt-1 inline-block">
+                              Active
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-bold uppercase bg-emerald-500/25 text-emerald-300 px-1.5 py-0.5 rounded mt-1 inline-block">
+                              Paid
+                            </span>
+                          )}
                         </div>
                         <span className="text-sm font-bold">{fmt(jodoFlex)}</span>
                       </div>
@@ -449,12 +451,10 @@ export default function Payments() {
 
                   <div className="mt-3 bg-white/10 rounded-lg px-3 py-2 border border-white/10">
                     <p className="text-[10px] text-white/70 leading-relaxed">
-                      We will inform you before your renewal date and our team
-                      will assist you through the process.
+                      We will remind you in advance about your remaining due amount, and our team will guide you further.
                     </p>
                   </div>
                 </div>
-              </div>
             </div>
           </div>
 
@@ -538,13 +538,20 @@ export default function Payments() {
               {/* Card 3: EMI Loan Details — dynamic NBFC groups */}
               {hasEMINBFC && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col">
-                  <div className="flex items-center gap-2.5 mb-3">
-                    <div className="w-8 h-8 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center">
-                      <CreditCard size={16} />
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center">
+                        <CreditCard size={16} />
+                      </div>
+                      <h4 className="font-bold text-slate-900 text-sm">
+                        EMI Loan Details
+                      </h4>
                     </div>
-                    <h4 className="font-bold text-slate-900 text-sm">
-                      EMI Loan Details
-                    </h4>
+                    {emiGroups.some(g => g.rows.some(r => r.status?.toLowerCase() === "active")) && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-700">
+                        Repaying
+                      </span>
+                    )}
                   </div>
                   <div className="bg-slate-50 rounded-lg border border-slate-100 overflow-x-auto">
                     <table className="w-full text-xs">
@@ -552,6 +559,7 @@ export default function Payments() {
                         <tr className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-200">
                           <th className="text-left py-2.5 px-3">NBFC</th>
                           <th className="text-left py-2.5 px-3">Total Loan</th>
+                          <th className="text-left py-2.5 px-3">EMI Amt</th>
                           <th className="text-left py-2.5 px-3">Tenure</th>
                           <th className="text-right py-2.5 px-3">Status</th>
                         </tr>
@@ -564,6 +572,9 @@ export default function Payments() {
                             </td>
                             <td className="py-2.5 px-3 text-slate-800 font-bold">
                               {fmt(group.totalLoanAmount)}
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-800 font-bold">
+                              {fmt(group.rows[0]?.emiAmount)}
                             </td>
                             <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
                               {group.rows[0]?.tenure || "--"}
@@ -580,15 +591,8 @@ export default function Payments() {
                       </tbody>
                     </table>
                   </div>
-                  <button
-                    onClick={openNbfcDetailsModal}
-                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5 mt-3"
-                  >
-                    <CreditCard size={13} />
-                    View History
-                  </button>
                   <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
-                    We will communicate with you in advance of your due date, and our team will guide you through the process.
+                    Note: This loan amount is financed to NxtWave by the respective NBFC, which you would pay back to the NBFC in EMI's.
                   </p>
                 </div>
               )}
@@ -607,9 +611,12 @@ export default function Payments() {
                     Questions about JODO Flex?
                   </p>
                 </div>
-                <button className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer">
+                <a
+                  href={`mailto:${nbfcContacts.find(c => c.nbfcName.toLowerCase().includes("jodo"))?.email || ""}`}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer no-underline"
+                >
                   Contact JODO
-                </button>
+                </a>
               </div>
             )}
             {hasEMINBFC && (
@@ -623,14 +630,18 @@ export default function Payments() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {emiGroups.map((group) => (
-                    <button
-                      key={group.nbfcName}
-                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                    >
-                      {group.nbfcName}
-                    </button>
-                  ))}
+                  {emiGroups.map((group) => {
+                    const contact = nbfcContacts.find(c => c.nbfcName.toLowerCase() === group.nbfcName.toLowerCase());
+                    return (
+                      <a
+                        key={group.nbfcName}
+                        href={`mailto:${contact?.email || ""}`}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer no-underline"
+                      >
+                        {group.nbfcName}
+                      </a>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -683,21 +694,6 @@ export default function Payments() {
         data={flexLogs || []}
       />
 
-      <PaymentHistoryModal
-        isOpen={nbfcDetailsModal}
-        onClose={() => setNbfcDetailsModal(false)}
-        title="EMI Disbursement Details"
-        loading={nbfcDetailsLoading}
-        columns={[
-          { key: "nbfcName", label: "NBFC" },
-          { key: "loanAmount", label: "Loan Amt", isAmount: true },
-          { key: "tenure", label: "Tenure" },
-          { key: "emiAmount", label: "EMI", isAmount: true },
-          { key: "status", label: "Status", isStatus: true },
-          { key: "dueDate", label: "Due Date" },
-        ]}
-        data={(nbfcAllRows || []).filter(r => !r.nbfcName?.toLowerCase().includes("jodo"))}
-      />
     </div>
   );
 }

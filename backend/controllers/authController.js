@@ -18,18 +18,6 @@ async function loginWithUserId(req, res) {
       return res.status(404).json({ error: "Student not found" });
     }
 
-    // Check if student is from 2025+ cohort using LPOAD
-    const lpoad = student["LPOAD"];
-    if (lpoad) {
-      const onboardingYear = new Date(lpoad).getFullYear();
-      if (onboardingYear < 2025) {
-        return res.status(403).json({
-          error:
-            "Payment portal is only available for students onboarded from 2025 onwards",
-        });
-      }
-    }
-
     const token = jwt.sign(
       {
         userId: student["UID"],

@@ -301,10 +301,22 @@ export default function Payments() {
   const hasEMINBFC = emiGroups.length > 0;
   const showJodoCard = jodoFlex > 0;
 
+  // Compute latest due date from all NBFC rows
+  const latestDueDate = (() => {
+    const allDueDates = nbfcGroups
+      .flatMap((g) => g.rows)
+      .map((r) => r.dueDate)
+      .filter(Boolean)
+      .map((d) => new Date(d))
+      .filter((d) => !isNaN(d.getTime()));
+    if (allDueDates.length === 0) return null;
+    return allDueDates.reduce((latest, d) => (d > latest ? d : latest));
+  })();
+
   const statusColor = (status) => {
     if (!status) return "bg-slate-100 text-slate-600";
     const s = status.toLowerCase();
-    if (s.includes("paid") || s.includes("settled") || s.includes("closed"))
+    if (s.includes("paid") || s.includes("settled") || s.includes("closed") || s.includes("completed"))
       return "bg-emerald-100 text-emerald-700";
     if (s.includes("active") || s.includes("ongoing"))
       return "bg-amber-100 text-amber-700";
@@ -555,13 +567,13 @@ export default function Payments() {
                       </div>
                     )}
 
-                    {/* Remaining Amount to Pay + renewal date */}
+                    {/* Remaining Amount to Pay + due date */}
                     <div className="border-t border-white/20 pt-2">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-white/80">
                           Remaining Amount to Pay
                         </span>
-                        {summary?.lpoad && (
+                        {latestDueDate && (
                           <span className="text-[10px] font-semibold uppercase tracking-wider text-white/80">
                             Due starts from
                           </span>
@@ -571,13 +583,9 @@ export default function Payments() {
                         <span className="text-lg font-black text-amber-300">
                           {fmt(remaining)}
                         </span>
-                        {summary?.lpoad && (
+                        {latestDueDate && (
                           <span className="text-sm font-bold text-white/70">
-                            {new Date(
-                              new Date(summary.lpoad).setFullYear(
-                                new Date(summary.lpoad).getFullYear() + 1
-                              )
-                            ).toLocaleDateString("en-IN", {
+                            {latestDueDate.toLocaleDateString("en-IN", {
                               month: "short",
                               year: "numeric",
                             })}

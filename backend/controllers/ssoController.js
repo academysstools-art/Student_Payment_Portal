@@ -39,17 +39,6 @@ async function generateToken(req, res) {
       return res.status(404).json({ error: "Student not found" });
     }
 
-    // Check 2025+ cohort
-    const lpoad = student["LPOAD"];
-    if (lpoad) {
-      const onboardingYear = new Date(lpoad).getFullYear();
-      if (onboardingYear < 2025) {
-        return res.status(403).json({
-          error: "Payment portal is only available for students onboarded from 2025 onwards",
-        });
-      }
-    }
-
     // Short-lived token (5 minutes) for SSO handoff
     const token = jwt.sign(
       { userId: student["UID"], type: "sso_handoff" },
@@ -167,15 +156,6 @@ async function ssoCallback(req, res) {
     if (!student) {
       console.log("[SSO Callback] Student not found, redirecting to:", `${frontendUrl}/sso?error=student_not_found`);
       return res.redirect(`${frontendUrl}/sso?error=student_not_found`);
-    }
-
-    // Check 2025+ cohort
-    const lpoad = student["LPOAD"];
-    if (lpoad) {
-      const onboardingYear = new Date(lpoad).getFullYear();
-      if (onboardingYear < 2025) {
-        return res.redirect(`${frontendUrl}/sso?error=cohort_restricted`);
-      }
     }
 
     // Generate 5-min handoff token and redirect to frontend

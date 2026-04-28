@@ -138,21 +138,34 @@ async function validateToken(req, res) {
 // Browser redirect callback — SSO system redirects here with user_id in query
 async function ssoCallback(req, res) {
   try {
+    console.log("[SSO Callback] Full URL:", req.originalUrl);
+    console.log("[SSO Callback] Query params:", JSON.stringify(req.query));
+    console.log("[SSO Callback] Raw user_id value:", JSON.stringify(req.query.user_id));
+
     const userId = (
       req.query.user_id || req.query.userId || req.query.uid || ""
     ).trim();
 
+    console.log("[SSO Callback] Resolved userId:", JSON.stringify(userId));
+
     const frontendUrl = (process.env.FRONTEND_URL || "").replace(/\/+$/, "");
+    console.log("[SSO Callback] FRONTEND_URL:", frontendUrl);
+
     if (!frontendUrl) {
       return res.status(500).send("FRONTEND_URL not configured");
     }
 
     if (!userId) {
+      console.log("[SSO Callback] No userId found, redirecting to error");
       return res.redirect(`${frontendUrl}/sso?error=missing_user_id`);
     }
 
+    console.log("[SSO Callback] Looking up student with UID:", userId);
     const student = await getStudentFromSheet(SHEET_NAMES.USER_BASIC_DETAILS, userId);
+    console.log("[SSO Callback] Student found:", student ? "YES" : "NO");
+
     if (!student) {
+      console.log("[SSO Callback] Student not found, redirecting to:", `${frontendUrl}/sso?error=student_not_found`);
       return res.redirect(`${frontendUrl}/sso?error=student_not_found`);
     }
 

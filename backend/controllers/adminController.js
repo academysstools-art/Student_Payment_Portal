@@ -44,11 +44,28 @@ async function adminLogin(req, res) {
 
 async function getAnalytics(req, res) {
   try {
-    const uniqueStudents = [...new Set(loginLogs.map((l) => l.userId))];
+    // Read persistent login logs from sheet
+    let logs = [];
+    try {
+      const sheetLogs = await getSheetData(SHEET_NAMES.LOGIN_LOGS);
+      logs = (sheetLogs || []).map((row) => ({
+        userId: row["UID"] || "",
+        name: row["Student Name"] || "",
+        programme: row["Programme"] || "",
+        method: row["Login Method"] || "direct",
+        timestamp: row["Timestamp"] || "",
+      }));
+    } catch (err) {
+      // Fall back to in-memory if sheet read fails
+      console.error("Failed to read login logs sheet, using in-memory:", err.message);
+      logs = loginLogs;
+    }
+
+    const uniqueStudents = [...new Set(logs.map((l) => l.userId))];
     res.json({
-      totalLogins: loginLogs.length,
+      totalLogins: logs.length,
       uniqueStudents: uniqueStudents.length,
-      recentLogins: loginLogs.slice(-50).reverse(),
+      recentLogins: logs.slice(-50).reverse(),
     });
   } catch (error) {
     console.error("Analytics error:", error.message);

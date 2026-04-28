@@ -9,6 +9,7 @@ const SHEET_NAMES = {
   FLEX_PAYMENT_LOGS: "Flex Payment logs",
   NBFC_DISBURSED_DETAILS: "NBFC Disbursed details",
   NBFC_SUPPORT_CONTACTS: "NBFC Support Contacts",
+  LOGIN_LOGS: "Login Logs",
 };
 
 function getGoogleSheetsClient() {
@@ -37,7 +38,7 @@ function getGoogleSheetsClient() {
       client_email: email,
       private_key: privateKey,
     },
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
 
   sheetsInstance = google.sheets({ version: "v4", auth });
@@ -105,10 +106,34 @@ async function getStudentByUserId(userId) {
   return getStudentFromSheet(SHEET_NAMES.USER_BASIC_DETAILS, userId);
 }
 
+// Append a login log row to the "Login Logs" sheet
+async function appendLoginLog({ userId, name, programme, method }) {
+  try {
+    const sheets = getGoogleSheetsClient();
+    const spreadsheetId = process.env.GOOGLE_SPREADSHEET_ID;
+    const timestamp = new Date().toISOString();
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `'${SHEET_NAMES.LOGIN_LOGS}'!A:E`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[userId, name, programme, method, timestamp]],
+      },
+    });
+
+    console.log("[Sheets] Login logged:", userId, method);
+  } catch (error) {
+    // Don't fail the login if logging fails
+    console.error("[Sheets] Failed to log login:", error.message);
+  }
+}
+
 module.exports = {
   getSheetData,
   getStudentByUserId,
   getStudentFromSheet,
   getStudentRowsFromSheet,
+  appendLoginLog,
   SHEET_NAMES,
 };

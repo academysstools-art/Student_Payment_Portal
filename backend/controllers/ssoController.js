@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken");
-const { getStudentFromSheet, SHEET_NAMES } = require("../config/googleSheets");
+const { getStudentFromSheet, appendLoginLog, SHEET_NAMES } = require("../config/googleSheets");
 const { loginLogs } = require("./authController");
 
 // Resolve UID from various field names the SSO system might send
@@ -105,12 +105,19 @@ async function validateToken(req, res) {
       { expiresIn: "24h" }
     );
 
-    // Track login
+    // Track login in-memory + sheet
     loginLogs.push({
       userId: student["UID"],
       name: student["Student Name"],
       programme: student["Programme"],
+      method: "sso",
       timestamp: new Date().toISOString(),
+    });
+    appendLoginLog({
+      userId: student["UID"],
+      name: student["Student Name"],
+      programme: student["Programme"],
+      method: "sso",
     });
 
     res.json({

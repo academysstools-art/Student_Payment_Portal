@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken");
-const { getStudentFromSheet, SHEET_NAMES } = require("../config/googleSheets");
+const { getStudentFromSheet, appendLoginLog, SHEET_NAMES } = require("../config/googleSheets");
 
 // In-memory login tracking
 const loginLogs = [];
@@ -40,12 +40,19 @@ async function loginWithUserId(req, res) {
       { expiresIn: "24h" }
     );
 
-    // Track login
+    // Track login in-memory + sheet
     loginLogs.push({
       userId: student["UID"],
       name: student["Student Name"],
       programme: student["Programme"],
+      method: "direct",
       timestamp: new Date().toISOString(),
+    });
+    appendLoginLog({
+      userId: student["UID"],
+      name: student["Student Name"],
+      programme: student["Programme"],
+      method: "direct",
     });
 
     res.json({

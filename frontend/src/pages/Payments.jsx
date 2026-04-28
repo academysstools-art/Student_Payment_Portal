@@ -49,6 +49,12 @@ export default function Payments() {
   // NBFC support contacts (name → email mapping)
   const [nbfcContacts, setNbfcContacts] = useState([]);
 
+  // Feedback
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackSending, setFeedbackSending] = useState(false);
+  const [feedbackSent, setFeedbackSent] = useState(false);
+
   useEffect(() => {
     async function fetchData() {
       try {
@@ -86,6 +92,23 @@ export default function Payments() {
       }
       setCompanyLogsLoading(false);
     }
+  }
+
+  async function submitFeedback() {
+    if (!feedbackText.trim()) return;
+    setFeedbackSending(true);
+    try {
+      await paymentAPI.submitFeedback(feedbackText.trim());
+      setFeedbackSent(true);
+      setFeedbackText("");
+      setTimeout(() => {
+        setFeedbackOpen(false);
+        setFeedbackSent(false);
+      }, 2000);
+    } catch {
+      // silently fail
+    }
+    setFeedbackSending(false);
   }
 
   async function openFlexLogsModal() {
@@ -159,11 +182,15 @@ export default function Payments() {
   // Dynamic NBFC groups from new API
   const nbfcGroups = nbfc?.nbfcGroups || [];
   const hasAnyNBFC = nbfcGroups.length > 0;
+  const jodoFlexGroups = nbfcGroups.filter(
+    (g) => g.nbfcName.toLowerCase().includes("jodo")
+  );
   const emiGroups = nbfcGroups.filter(
     (g) => !g.nbfcName.toLowerCase().includes("jodo")
   );
   const hasEMINBFC = emiGroups.length > 0;
   const showJodoCard = jodoFlex > 0;
+  const isJodoActive = jodoFlexGroups.some(g => g.rows.some(r => r.status?.toLowerCase() === "active"));
 
   const statusColor = (status) => {
     if (!status) return "bg-slate-100 text-slate-600";
@@ -223,6 +250,14 @@ export default function Payments() {
           >
             <CreditCard size={18} />
             Payment Details
+          </button>
+          <button
+            onClick={() => setFeedbackOpen(true)}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-slate-600 font-semibold text-sm transition-colors cursor-pointer"
+            title="Feedback"
+          >
+            <MessageCircle size={18} />
+            Feedback
           </button>
         </nav>
 
@@ -319,14 +354,14 @@ export default function Payments() {
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-white/80">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-white">
                       Total Programme Fee
                     </span>
                     <span className="text-lg font-black">{fmt(totalFee)}</span>
                   </div>
                   {discount > 0 && (
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider text-white/80">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-white">
                         Discount Applied
                       </span>
                       <span className="text-lg font-black text-white">
@@ -335,13 +370,13 @@ export default function Payments() {
                     </div>
                   )}
                   <div className="border-t border-white/15 pt-2 flex items-center justify-between">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-white/80">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-white">
                       Total Fee Payable
                     </span>
                     <span className="text-lg font-black">{fmt(payable)}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-white/80 flex items-center gap-1 group relative">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-white flex items-center gap-1 group relative">
                       Total Amount Covered
                       <Info size={11} className="text-white/50 cursor-help" />
                       <span className="absolute bottom-full left-0 mb-1 hidden group-hover:block bg-black/90 text-white text-[10px] rounded-lg px-3 py-2 w-56 leading-relaxed z-50">
@@ -351,7 +386,7 @@ export default function Payments() {
                     <span className="text-lg font-black">{fmt(totalCovered)}</span>
                   </div>
                   <div className="border-t border-white/15 pt-2 flex items-center justify-between">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-white/70 flex items-center gap-1 group relative">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-white flex items-center gap-1 group relative">
                       Remaining Amount to Pay
                       <Info size={11} className="text-white/50 cursor-help" />
                       <span className="absolute bottom-full left-0 mb-1 hidden group-hover:block bg-black/90 text-white text-[10px] rounded-lg px-3 py-2 w-56 leading-relaxed z-50">
@@ -367,14 +402,14 @@ export default function Payments() {
 
               {/* RIGHT: Breakdown sub-card */}
                 <div className="lg:w-[320px] bg-white/15 backdrop-blur-sm rounded-xl p-4 border border-white/20 self-start">
-                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-white/70 mb-3">
+                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-white mb-3">
                     Total Amount Covered - Breakdown
                   </h4>
                   <div className="space-y-2">
                     {paidNxtWave > 0 && (
                       <div className="flex justify-between items-center">
                         <div>
-                          <span className="text-xs text-white/70 block">
+                          <span className="text-xs text-white/90 block">
                             Amount Paid to NxtWave
                           </span>
                           <span className="text-[9px] font-bold uppercase bg-emerald-500/25 text-emerald-300 px-1.5 py-0.5 rounded mt-1 inline-block">
@@ -387,7 +422,7 @@ export default function Payments() {
                     {jodoFlex > 0 && (
                       <div className="flex justify-between items-center">
                         <div>
-                          <span className="text-xs text-white/70 block">
+                          <span className="text-xs text-white/90 block">
                             Jodo Flex Payments
                           </span>
                           {nbfcGroups.some(g => g.nbfcName.toLowerCase().includes("jodo") && g.rows.some(r => r.status?.toLowerCase() === "active")) ? (
@@ -406,7 +441,7 @@ export default function Payments() {
                     {emiLoan > 0 && (
                       <div className="flex justify-between items-center">
                         <div>
-                          <span className="text-xs text-white/70 block">
+                          <span className="text-xs text-white/90 block">
                             NBFC Loan Amount Covered
                           </span>
                           <span className="text-[9px] font-bold uppercase bg-emerald-500/25 text-emerald-300 px-1.5 py-0.5 rounded mt-1 inline-block">
@@ -420,11 +455,11 @@ export default function Payments() {
                     {/* Remaining Amount to Pay + renewal date */}
                     <div className="border-t border-white/20 pt-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-white/50">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-white/80">
                           Remaining Amount to Pay
                         </span>
                         {summary?.lpoad && (
-                          <span className="text-[10px] font-semibold uppercase tracking-wider text-white/50">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-white/80">
                             Due starts from
                           </span>
                         )}
@@ -450,7 +485,7 @@ export default function Payments() {
                   </div>
 
                   <div className="mt-3 bg-white/10 rounded-lg px-3 py-2 border border-white/10">
-                    <p className="text-[10px] text-white/70 leading-relaxed">
+                    <p className="text-[10px] text-white/90 leading-relaxed">
                       We will remind you in advance about your remaining due amount, and our team will guide you further.
                     </p>
                   </div>
@@ -513,25 +548,77 @@ export default function Payments() {
                         Jodo Flex Payments
                       </h4>
                     </div>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${isJodoActive ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
+                      {isJodoActive ? "Active" : "Paid"}
+                    </span>
                   </div>
-                  <p className="text-[11px] text-slate-500 mb-2">
-                    Payments made through Jodo Flex
-                  </p>
-                  <div className="bg-slate-50 rounded-lg border border-slate-100 p-3 mb-3 flex-1">
-                    <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold mb-0.5">
-                      Total Amount Paid
-                    </p>
-                    <p className="text-xl font-black text-slate-900">
-                      {fmt(jodoFlex)}
-                    </p>
-                  </div>
-                  <button
-                    onClick={openFlexLogsModal}
-                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5 mt-auto"
-                  >
-                    <Wallet size={13} />
-                    View Payment History
-                  </button>
+
+                  {isJodoActive ? (
+                    <>
+                      <p className="text-[11px] text-slate-500 mb-2">
+                        Jodo Flex loan details
+                      </p>
+                      <div className="bg-slate-50 rounded-lg border border-slate-100 p-3 mb-3 flex-1 space-y-2">
+                        {jodoFlexGroups.map((group) =>
+                          group.rows.map((row, idx) => (
+                            <div key={idx} className="space-y-1.5">
+                              {idx > 0 && <div className="border-t border-slate-200 pt-1.5" />}
+                              <div className="flex justify-between">
+                                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Loan Amount</span>
+                                <span className="text-sm font-bold text-slate-900">{fmt(row.loanAmount)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">EMI Amount</span>
+                                <span className="text-sm font-bold text-slate-900">{fmt(row.emiAmount)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Tenure</span>
+                                <span className="text-xs text-slate-600">{row.tenure || "--"}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Due Date</span>
+                                <span className="text-xs text-slate-600">{row.dueDate || "--"}</span>
+                              </div>
+                              <div className="flex justify-between items-center">
+                                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Status</span>
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusColor(row.status)}`}>
+                                  {row.status || "--"}
+                                </span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                      <button
+                        onClick={openFlexLogsModal}
+                        className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5 mt-auto"
+                      >
+                        <Wallet size={13} />
+                        View Payment History
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-[11px] text-slate-500 mb-2">
+                        Payments made through Jodo Flex
+                      </p>
+                      <div className="bg-slate-50 rounded-lg border border-slate-100 p-3 mb-3 flex-1">
+                        <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold mb-0.5">
+                          Total Amount Paid
+                        </p>
+                        <p className="text-xl font-black text-slate-900">
+                          {fmt(jodoFlex)}
+                        </p>
+                      </div>
+                      <button
+                        onClick={openFlexLogsModal}
+                        className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5 mt-auto"
+                      >
+                        <Wallet size={13} />
+                        View Payment History
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -693,6 +780,47 @@ export default function Payments() {
         ]}
         data={flexLogs || []}
       />
+
+      {/* Feedback Modal */}
+      {feedbackOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setFeedbackOpen(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-slate-900">Share Feedback</h3>
+              <button onClick={() => setFeedbackOpen(false)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer">
+                <X size={18} className="text-slate-400" />
+              </button>
+            </div>
+            {feedbackSent ? (
+              <div className="text-center py-6">
+                <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <span className="text-emerald-600 text-xl">&#10003;</span>
+                </div>
+                <p className="text-sm font-semibold text-slate-900">Thank you for your feedback!</p>
+              </div>
+            ) : (
+              <>
+                <textarea
+                  value={feedbackText}
+                  onChange={(e) => setFeedbackText(e.target.value)}
+                  placeholder="Tell us about your experience or suggest improvements..."
+                  className="w-full border border-slate-200 rounded-xl p-3 text-sm text-slate-700 placeholder-slate-400 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  rows={4}
+                />
+                <button
+                  onClick={submitFeedback}
+                  disabled={feedbackSending || !feedbackText.trim()}
+                  className="w-full mt-3 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-xl text-sm font-bold transition-colors cursor-pointer flex items-center justify-center gap-2"
+                >
+                  {feedbackSending ? <Loader2 size={16} className="animate-spin" /> : <MessageCircle size={16} />}
+                  {feedbackSending ? "Sending..." : "Submit Feedback"}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
     </div>
   );

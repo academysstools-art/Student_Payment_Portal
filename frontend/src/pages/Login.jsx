@@ -1,16 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { authAPI, adminAPI } from "../services/api";
-import { TrendingUp, Loader2, ShieldCheck, ExternalLink, User } from "lucide-react";
+import { authAPI } from "../services/api";
+import { TrendingUp, Loader2, ExternalLink } from "lucide-react";
 
 const SSO_LOGIN_URL = import.meta.env.VITE_SSO_LOGIN_URL;
 
 export default function Login() {
-  const [mode, setMode] = useState("student");
   const [userId, setUserId] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -35,25 +32,6 @@ export default function Login() {
     }
   }
 
-  async function handleAdminLogin(e) {
-    e.preventDefault();
-    setError("");
-    if (!email.trim() || !password.trim()) {
-      setError("Please enter email and password");
-      return;
-    }
-    setLoading(true);
-    try {
-      const response = await adminAPI.login(email.trim(), password);
-      login(response.data.token, response.data.admin);
-      navigate("/admin");
-    } catch (err) {
-      setError(err.response?.data?.error || "Login failed. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-500 via-purple-500 to-blue-700 px-5">
       <div className="bg-white rounded-[2rem] shadow-2xl p-10 w-full max-w-md">
@@ -70,154 +48,63 @@ export default function Login() {
           </p>
         </div>
 
-        {/* Mode Toggle */}
-        <div className="flex gap-2 mb-6">
-          <button
-            type="button"
-            onClick={() => { setMode("student"); setError(""); }}
-            className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
-              mode === "student"
-                ? "bg-blue-900 text-white"
-                : "bg-slate-100 text-slate-400 hover:bg-slate-200"
-            }`}
-          >
-            <User size={14} /> Student
-          </button>
-          <button
-            type="button"
-            onClick={() => { setMode("admin"); setError(""); }}
-            className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
-              mode === "admin"
-                ? "bg-slate-900 text-white"
-                : "bg-slate-100 text-slate-400 hover:bg-slate-200"
-            }`}
-          >
-            <ShieldCheck size={14} /> Admin
-          </button>
-        </div>
-
         {/* Student Login */}
-        {mode === "student" && (
-          <>
-            {SSO_LOGIN_URL && (
-              <div className="mb-4">
-                <a
-                  href={SSO_LOGIN_URL}
-                  className="w-full bg-blue-900 hover:bg-blue-800 text-white font-black text-sm uppercase tracking-widest py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2 no-underline"
-                >
-                  <ExternalLink size={16} />
-                  Login with NxtWave Account
-                </a>
-                <div className="flex items-center gap-3 my-4">
-                  <div className="flex-1 h-px bg-slate-200"></div>
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">or</span>
-                  <div className="flex-1 h-px bg-slate-200"></div>
-                </div>
-              </div>
-            )}
-            <form onSubmit={handleStudentLogin} className="space-y-5">
-              <div>
-                <label
-                  htmlFor="userId"
-                  className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2"
-                >
-                  User ID
-                </label>
-                <input
-                  id="userId"
-                  type="text"
-                  placeholder="e.g. NXW-2025-STU001"
-                  value={userId}
-                  onChange={(e) => setUserId(e.target.value)}
-                  disabled={loading}
-                  autoFocus
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-slate-900 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all placeholder:text-slate-300 disabled:opacity-50"
-                />
-              </div>
-
-              {error && (
-                <div className="bg-rose-50 text-rose-600 px-4 py-3 rounded-xl text-sm font-bold border border-rose-100">
-                  {error}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-blue-900 hover:bg-blue-800 text-white font-black text-sm uppercase tracking-widest py-3.5 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" /> Verifying...
-                  </>
-                ) : (
-                  "View Payment Status"
-                )}
-              </button>
-            </form>
-          </>
-        )}
-
-        {/* Admin Login */}
-        {mode === "admin" && (
-          <form onSubmit={handleAdminLogin} className="space-y-5">
-            <div>
-              <label
-                htmlFor="email"
-                className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2"
-              >
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                placeholder="admin@nxtwave.in"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={loading}
-                autoFocus
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-slate-900 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all placeholder:text-slate-300 disabled:opacity-50"
-              />
-            </div>
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2"
-              >
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                placeholder="Enter password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={loading}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-slate-900 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all placeholder:text-slate-300 disabled:opacity-50"
-              />
-            </div>
-
-            {error && (
-              <div className="bg-rose-50 text-rose-600 px-4 py-3 rounded-xl text-sm font-bold border border-rose-100">
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black text-sm uppercase tracking-widest py-3.5 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
+        {SSO_LOGIN_URL && (
+          <div className="mb-4">
+            <a
+              href={SSO_LOGIN_URL}
+              className="w-full bg-blue-900 hover:bg-blue-800 text-white font-black text-sm uppercase tracking-widest py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2 no-underline"
             >
-              {loading ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" /> Authenticating...
-                </>
-              ) : (
-                "Access Admin Panel"
-              )}
-            </button>
-          </form>
+              <ExternalLink size={16} />
+              Login with NxtWave Account
+            </a>
+            <div className="flex items-center gap-3 my-4">
+              <div className="flex-1 h-px bg-slate-200"></div>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">or</span>
+              <div className="flex-1 h-px bg-slate-200"></div>
+            </div>
+          </div>
         )}
+        <form onSubmit={handleStudentLogin} className="space-y-5">
+          <div>
+            <label
+              htmlFor="userId"
+              className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2"
+            >
+              User ID
+            </label>
+            <input
+              id="userId"
+              type="text"
+              placeholder="e.g. NXW-2025-STU001"
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
+              disabled={loading}
+              autoFocus
+              className="w-full px-4 py-3 rounded-xl border border-slate-200 text-slate-900 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all placeholder:text-slate-300 disabled:opacity-50"
+            />
+          </div>
+
+          {error && (
+            <div className="bg-rose-50 text-rose-600 px-4 py-3 rounded-xl text-sm font-bold border border-rose-100">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-900 hover:bg-blue-800 text-white font-black text-sm uppercase tracking-widest py-3.5 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <>
+                <Loader2 size={16} className="animate-spin" /> Verifying...
+              </>
+            ) : (
+              "View Payment Status"
+            )}
+          </button>
+        </form>
       </div>
     </div>
   );

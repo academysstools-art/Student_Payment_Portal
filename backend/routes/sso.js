@@ -1,11 +1,14 @@
 const express = require("express");
 const router = express.Router();
-const { generateToken, validateToken } = require("../controllers/ssoController");
+const { generateToken, validateToken, ssoCallback } = require("../controllers/ssoController");
 
-// POST /api/sso/generate-token — called by Forms backend
+// POST /api/sso/generate-token — called by Forms backend (server-to-server)
 router.post("/generate-token", generateToken);
 
 // POST /api/sso/validate-token — called by our frontend
 router.post("/validate-token", validateToken);
+
+// GET /api/sso/callback — browser redirect from SSO system (static redirect URL)
+router.get("/callback", ssoCallback);
 
 module.exports = router;

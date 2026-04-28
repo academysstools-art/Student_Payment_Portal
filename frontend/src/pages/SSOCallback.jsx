@@ -11,7 +11,20 @@ export default function SSOCallback() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const authToken = searchParams.get("auth_token");
+    // Check for error from backend redirect
+    const errorParam = searchParams.get("error");
+    if (errorParam) {
+      const errorMessages = {
+        missing_user_id: "User ID was not provided by the SSO system. Please try again.",
+        student_not_found: "Student not found. Please check your credentials.",
+        cohort_restricted: "Payment portal is only available for students onboarded from 2025 onwards.",
+        server_error: "Something went wrong. Please try again.",
+      };
+      setError(errorMessages[errorParam] || "Authentication failed. Please try again.");
+      return;
+    }
+
+    const authToken = searchParams.get("token") || searchParams.get("auth_token");
 
     if (!authToken) {
       setError("No authentication token found. Please try logging in again.");

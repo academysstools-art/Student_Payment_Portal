@@ -10,6 +10,8 @@ const SHEET_NAMES = {
   NBFC_DISBURSED_DETAILS: "NBFC Disbursed details",
   NBFC_SUPPORT_CONTACTS: "NBFC Support Contacts",
   LOGIN_LOGS: "Login Logs",
+  FEEDBACK: "Feedback",
+  EVENT_LOGS: "Event Logs",
 };
 
 function getGoogleSheetsClient() {
@@ -129,11 +131,55 @@ async function appendLoginLog({ userId, name, programme, method }) {
   }
 }
 
+// Append a feedback row to the "Feedback" sheet
+async function appendFeedback({ userId, name, programme, rating, selectedOptions, comments }) {
+  try {
+    const sheets = getGoogleSheetsClient();
+    const spreadsheetId = process.env.GOOGLE_SPREADSHEET_ID;
+    const timestamp = new Date().toISOString();
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `'${SHEET_NAMES.FEEDBACK}'!A:G`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[userId, name, programme, rating, (selectedOptions || []).join(", "), comments || "", timestamp]],
+      },
+    });
+
+    console.log("[Sheets] Feedback logged:", userId, rating);
+  } catch (error) {
+    console.error("[Sheets] Failed to log feedback:", error.message);
+  }
+}
+
+// Append an event log row to the "Event Logs" sheet (fire-and-forget)
+async function appendEventLog({ userId, name, programme, eventName, eventData }) {
+  try {
+    const sheets = getGoogleSheetsClient();
+    const spreadsheetId = process.env.GOOGLE_SPREADSHEET_ID;
+    const timestamp = new Date().toISOString();
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `'${SHEET_NAMES.EVENT_LOGS}'!A:F`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[userId, name, programme, eventName, eventData ? JSON.stringify(eventData) : "", timestamp]],
+      },
+    });
+  } catch (error) {
+    console.error("[Sheets] Failed to log event:", error.message);
+  }
+}
+
 module.exports = {
   getSheetData,
   getStudentByUserId,
   getStudentFromSheet,
   getStudentRowsFromSheet,
   appendLoginLog,
+  appendFeedback,
+  appendEventLog,
   SHEET_NAMES,
 };

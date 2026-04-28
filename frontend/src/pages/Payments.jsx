@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { paymentAPI } from "../services/api";
@@ -17,6 +17,7 @@ import {
   HelpCircle,
   MapPin,
   Info,
+  Star,
 } from "lucide-react";
 
 const fmt = (value) => {
@@ -51,9 +52,24 @@ export default function Payments() {
 
   // Feedback
   const [feedbackOpen, setFeedbackOpen] = useState(false);
-  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackRating, setFeedbackRating] = useState(0);
+  const [feedbackOptions, setFeedbackOptions] = useState([]);
+  const [feedbackComment, setFeedbackComment] = useState("");
   const [feedbackSending, setFeedbackSending] = useState(false);
   const [feedbackSent, setFeedbackSent] = useState(false);
+
+  // Tracking refs
+  const startTimeRef = useRef(Date.now());
+  const maxScrollRef = useRef(0);
+  const viewedSectionsRef = useRef(new Set());
+  const feedbackWasOpenedRef = useRef(false);
+  const paymentSummaryRef = useRef(null);
+  const coveredAmountRef = useRef(null);
+  const emiDetailsRef = useRef(null);
+
+  const track = useCallback((eventName, eventData) => {
+    paymentAPI.trackEvent(eventName, eventData);
+  }, []);
 
   useEffect(() => {
     async function fetchData() {
@@ -75,12 +91,76 @@ export default function Payments() {
     fetchData();
   }, []);
 
+  // --- Event Tracking ---
+
+  // Page view + time spent + scroll depth
+  useEffect(() => {
+    track("fee_page_viewed");
+
+    const handleScroll = () => {
+      const scrollTop = window.scrollY || document.documentElement.scrollTop;
+      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+      if (docHeight > 0) {
+        const pct = Math.round((scrollTop / docHeight) * 100);
+        if (pct > maxScrollRef.current) maxScrollRef.current = pct;
+      }
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+
+    const handleUnload = () => {
+      const seconds = Math.round((Date.now() - startTimeRef.current) / 1000);
+      if (seconds > 0) track("time_spent", { seconds });
+      if (maxScrollRef.current > 0) track("scroll_depth", { maxPercent: maxScrollRef.current });
+    };
+    window.addEventListener("beforeunload", handleUnload);
+
+    return () => {
+      handleUnload();
+      window.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("beforeunload", handleUnload);
+    };
+  }, [track]);
+
+  // Section visibility (IntersectionObserver)
+  useEffect(() => {
+    const sectionMap = {
+      payment_summary_viewed: paymentSummaryRef,
+      covered_amount_viewed: coveredAmountRef,
+      emi_details_viewed: emiDetailsRef,
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const eventName = entry.target.dataset.trackSection;
+            if (eventName && !viewedSectionsRef.current.has(eventName)) {
+              viewedSectionsRef.current.add(eventName);
+              track(eventName);
+            }
+          }
+        });
+      },
+      { threshold: 0.3 }
+    );
+
+    Object.entries(sectionMap).forEach(([eventName, ref]) => {
+      if (ref.current) {
+        ref.current.dataset.trackSection = eventName;
+        observer.observe(ref.current);
+      }
+    });
+
+    return () => observer.disconnect();
+  }, [loading, track]);
+
   function handleLogout() {
     logout();
     navigate("/");
   }
 
   async function openCompanyLogsModal() {
+    track("clicked_payment_history", { type: "company" });
     setCompanyLogsModal(true);
     if (companyLogs === null) {
       setCompanyLogsLoading(true);
@@ -94,13 +174,45 @@ export default function Payments() {
     }
   }
 
+  const positiveOptions = [
+    "Easy to understand the complete fee details",
+    "Clear remaining amount",
+    "Helpful payment/loan details",
+    "Easy to navigate",
+    "Everything was clear",
+  ];
+  const negativeOptions = [
+    "Fee details are confusing",
+    "Remaining amount is not clear",
+    "EMI/loan details are hard to understand",
+    "Information seems missing",
+    "Page is hard to navigate",
+  ];
+
+  function toggleFeedbackOption(opt) {
+    setFeedbackOptions((prev) =>
+      prev.includes(opt) ? prev.filter((o) => o !== opt) : [...prev, opt]
+    );
+  }
+
+  function resetFeedback() {
+    setFeedbackRating(0);
+    setFeedbackOptions([]);
+    setFeedbackComment("");
+  }
+
   async function submitFeedback() {
-    if (!feedbackText.trim()) return;
+    if (feedbackRating === 0) return;
     setFeedbackSending(true);
     try {
-      await paymentAPI.submitFeedback(feedbackText.trim());
+      await paymentAPI.submitFeedback({
+        rating: feedbackRating,
+        selectedOptions: feedbackOptions,
+        comments: feedbackComment.trim(),
+      });
+      track("feedback_submitted", { rating: feedbackRating });
       setFeedbackSent(true);
-      setFeedbackText("");
+      resetFeedback();
       setTimeout(() => {
         setFeedbackOpen(false);
         setFeedbackSent(false);
@@ -112,6 +224,7 @@ export default function Payments() {
   }
 
   async function openFlexLogsModal() {
+    track("clicked_payment_history", { type: "flex" });
     setFlexLogsModal(true);
     if (flexLogs === null) {
       setFlexLogsLoading(true);
@@ -182,15 +295,11 @@ export default function Payments() {
   // Dynamic NBFC groups from new API
   const nbfcGroups = nbfc?.nbfcGroups || [];
   const hasAnyNBFC = nbfcGroups.length > 0;
-  const jodoFlexGroups = nbfcGroups.filter(
-    (g) => g.nbfcName.toLowerCase().includes("jodo")
-  );
   const emiGroups = nbfcGroups.filter(
     (g) => !g.nbfcName.toLowerCase().includes("jodo")
   );
   const hasEMINBFC = emiGroups.length > 0;
   const showJodoCard = jodoFlex > 0;
-  const isJodoActive = jodoFlexGroups.some(g => g.rows.some(r => r.status?.toLowerCase() === "active"));
 
   const statusColor = (status) => {
     if (!status) return "bg-slate-100 text-slate-600";
@@ -252,7 +361,7 @@ export default function Payments() {
             Payment Details
           </button>
           <button
-            onClick={() => setFeedbackOpen(true)}
+            onClick={() => { setFeedbackOpen(true); feedbackWasOpenedRef.current = true; track("feedback_opened"); }}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-slate-600 font-semibold text-sm transition-colors cursor-pointer"
             title="Feedback"
           >
@@ -335,7 +444,7 @@ export default function Payments() {
           )}
 
           {/* ===== PAYMENT SUMMARY CARD ===== */}
-          <div className="bg-gradient-to-br from-[#4338ca] via-[#4f46e5] to-[#7c3aed] rounded-2xl p-4 lg:p-5 text-white shadow-xl shadow-indigo-200/50 relative overflow-hidden">
+          <div ref={paymentSummaryRef} className="bg-gradient-to-br from-[#4338ca] via-[#4f46e5] to-[#7c3aed] rounded-2xl p-4 lg:p-5 text-white shadow-xl shadow-indigo-200/50 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-72 h-72 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/3" />
             <div className="absolute bottom-0 left-1/3 w-48 h-48 bg-white/5 rounded-full translate-y-1/2" />
 
@@ -425,15 +534,9 @@ export default function Payments() {
                           <span className="text-xs text-white/90 block">
                             Jodo Flex Payments
                           </span>
-                          {nbfcGroups.some(g => g.nbfcName.toLowerCase().includes("jodo") && g.rows.some(r => r.status?.toLowerCase() === "active")) ? (
-                            <span className="text-[9px] font-bold uppercase bg-amber-500/25 text-amber-300 px-1.5 py-0.5 rounded mt-1 inline-block">
-                              Active
-                            </span>
-                          ) : (
-                            <span className="text-[9px] font-bold uppercase bg-emerald-500/25 text-emerald-300 px-1.5 py-0.5 rounded mt-1 inline-block">
-                              Paid
-                            </span>
-                          )}
+                          <span className="text-[9px] font-bold uppercase bg-emerald-500/25 text-emerald-300 px-1.5 py-0.5 rounded mt-1 inline-block">
+                            Paid
+                          </span>
                         </div>
                         <span className="text-sm font-bold">{fmt(jodoFlex)}</span>
                       </div>
@@ -494,7 +597,7 @@ export default function Payments() {
           </div>
 
           {/* ===== COVERED AMOUNT DETAILS ===== */}
-          <div>
+          <div ref={coveredAmountRef}>
             <h3 className="text-base font-bold text-slate-900 mb-3">
               Covered Amount Details
             </h3>
@@ -548,83 +651,34 @@ export default function Payments() {
                         Jodo Flex Payments
                       </h4>
                     </div>
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${isJodoActive ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
-                      {isJodoActive ? "Active" : "Paid"}
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-700">
+                      Paid
                     </span>
                   </div>
-
-                  {isJodoActive ? (
-                    <>
-                      <p className="text-[11px] text-slate-500 mb-2">
-                        Jodo Flex loan details
-                      </p>
-                      <div className="bg-slate-50 rounded-lg border border-slate-100 p-3 mb-3 flex-1 space-y-2">
-                        {jodoFlexGroups.map((group) =>
-                          group.rows.map((row, idx) => (
-                            <div key={idx} className="space-y-1.5">
-                              {idx > 0 && <div className="border-t border-slate-200 pt-1.5" />}
-                              <div className="flex justify-between">
-                                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Loan Amount</span>
-                                <span className="text-sm font-bold text-slate-900">{fmt(row.loanAmount)}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">EMI Amount</span>
-                                <span className="text-sm font-bold text-slate-900">{fmt(row.emiAmount)}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Tenure</span>
-                                <span className="text-xs text-slate-600">{row.tenure || "--"}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Due Date</span>
-                                <span className="text-xs text-slate-600">{row.dueDate || "--"}</span>
-                              </div>
-                              <div className="flex justify-between items-center">
-                                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Status</span>
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusColor(row.status)}`}>
-                                  {row.status || "--"}
-                                </span>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                      <button
-                        onClick={openFlexLogsModal}
-                        className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5 mt-auto"
-                      >
-                        <Wallet size={13} />
-                        View Payment History
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-[11px] text-slate-500 mb-2">
-                        Payments made through Jodo Flex
-                      </p>
-                      <div className="bg-slate-50 rounded-lg border border-slate-100 p-3 mb-3 flex-1">
-                        <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold mb-0.5">
-                          Total Amount Paid
-                        </p>
-                        <p className="text-xl font-black text-slate-900">
-                          {fmt(jodoFlex)}
-                        </p>
-                      </div>
-                      <button
-                        onClick={openFlexLogsModal}
-                        className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5 mt-auto"
-                      >
-                        <Wallet size={13} />
-                        View Payment History
-                      </button>
-                    </>
-                  )}
+                  <p className="text-[11px] text-slate-500 mb-2">
+                    Payments made through Jodo Flex
+                  </p>
+                  <div className="bg-slate-50 rounded-lg border border-slate-100 p-3 mb-3 flex-1">
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold mb-0.5">
+                      Total Amount Paid
+                    </p>
+                    <p className="text-xl font-black text-slate-900">
+                      {fmt(jodoFlex)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={openFlexLogsModal}
+                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1.5 mt-auto"
+                  >
+                    <Wallet size={13} />
+                    View Payment History
+                  </button>
                 </div>
               )}
 
               {/* Card 3: EMI Loan Details — dynamic NBFC groups */}
               {hasEMINBFC && (
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col">
+                <div ref={emiDetailsRef} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2.5">
                       <div className="w-8 h-8 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center">
@@ -700,6 +754,7 @@ export default function Payments() {
                 </div>
                 <a
                   href={`mailto:${nbfcContacts.find(c => c.nbfcName.toLowerCase().includes("jodo"))?.email || ""}`}
+                  onClick={() => track("clicked_contact_jodo")}
                   className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer no-underline"
                 >
                   Contact JODO
@@ -723,6 +778,7 @@ export default function Payments() {
                       <a
                         key={group.nbfcName}
                         href={`mailto:${contact?.email || ""}`}
+                        onClick={() => track("clicked_contact_nbfc", { nbfcName: group.nbfcName })}
                         className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer no-underline"
                       >
                         {group.nbfcName}
@@ -746,7 +802,7 @@ export default function Payments() {
 
       {/* Floating Chat Button */}
       <button
-        onClick={() => window.open("mailto:support@nxtwave.in")}
+        onClick={() => { track("clicked_chat_support"); window.open("mailto:support@nxtwave.in"); }}
         className="fixed bottom-6 right-6 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg shadow-indigo-200 flex items-center justify-center transition-all hover:scale-105 cursor-pointer z-50"
         title="Contact Support"
       >
@@ -784,11 +840,11 @@ export default function Payments() {
       {/* Feedback Modal */}
       {feedbackOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setFeedbackOpen(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-5">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => { if (!feedbackSent) track("feedback_abandoned"); setFeedbackOpen(false); resetFeedback(); }} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-bold text-slate-900">Share Feedback</h3>
-              <button onClick={() => setFeedbackOpen(false)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer">
+              <button onClick={() => { if (!feedbackSent) track("feedback_abandoned"); setFeedbackOpen(false); resetFeedback(); }} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer">
                 <X size={18} className="text-slate-400" />
               </button>
             </div>
@@ -801,16 +857,71 @@ export default function Payments() {
               </div>
             ) : (
               <>
-                <textarea
-                  value={feedbackText}
-                  onChange={(e) => setFeedbackText(e.target.value)}
-                  placeholder="Tell us about your experience or suggest improvements..."
-                  className="w-full border border-slate-200 rounded-xl p-3 text-sm text-slate-700 placeholder-slate-400 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  rows={4}
-                />
+                {/* Q1: Star Rating */}
+                <p className="text-xs font-semibold text-slate-700 mb-2">How would you rate this Fee Details page?</p>
+                <div className="flex items-center gap-1 mb-4">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => { setFeedbackRating(star); setFeedbackOptions([]); }}
+                      className="cursor-pointer p-0.5 transition-transform hover:scale-110"
+                    >
+                      <Star
+                        size={28}
+                        className={star <= feedbackRating ? "text-amber-400 fill-amber-400" : "text-slate-300"}
+                      />
+                    </button>
+                  ))}
+                  {feedbackRating > 0 && (
+                    <span className="ml-2 text-xs font-semibold text-slate-500">{feedbackRating}/5</span>
+                  )}
+                </div>
+
+                {/* Q2: Conditional Options (shown after rating) */}
+                {feedbackRating > 0 && (
+                  <>
+                    <p className="text-xs font-semibold text-slate-700 mb-2">
+                      {feedbackRating >= 4
+                        ? "What did you find most helpful on this page?"
+                        : "What difficulties did you face on this page?"}
+                    </p>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {(feedbackRating >= 4 ? positiveOptions : negativeOptions).map((opt) => (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => toggleFeedbackOption(opt)}
+                          className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors cursor-pointer ${
+                            feedbackOptions.includes(opt)
+                              ? "bg-indigo-600 text-white border-indigo-600"
+                              : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600"
+                          }`}
+                        >
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Q3: Open Text */}
+                    <p className="text-xs font-semibold text-slate-700 mb-2">
+                      {feedbackRating >= 4
+                        ? "Anything else you liked or wanted to share?"
+                        : "What should we improve to make this page better for you?"}
+                    </p>
+                    <textarea
+                      value={feedbackComment}
+                      onChange={(e) => setFeedbackComment(e.target.value)}
+                      placeholder="Type your thoughts here... (optional)"
+                      className="w-full border border-slate-200 rounded-xl p-3 text-sm text-slate-700 placeholder-slate-400 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      rows={3}
+                    />
+                  </>
+                )}
+
                 <button
                   onClick={submitFeedback}
-                  disabled={feedbackSending || !feedbackText.trim()}
+                  disabled={feedbackSending || feedbackRating === 0}
                   className="w-full mt-3 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-xl text-sm font-bold transition-colors cursor-pointer flex items-center justify-center gap-2"
                 >
                   {feedbackSending ? <Loader2 size={16} className="animate-spin" /> : <MessageCircle size={16} />}

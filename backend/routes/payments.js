@@ -8,6 +8,7 @@ const {
   getFlexPaymentLogs,
   getNBFCAllRows,
   getNBFCContacts,
+  trackEvent,
 } = require("../controllers/paymentController");
 const { submitFeedback } = require("../controllers/adminController");
 
@@ -31,5 +32,8 @@ router.get("/nbfc-contacts", authenticateToken, getNBFCContacts);
 
 // POST /api/payments/feedback
 router.post("/feedback", authenticateToken, submitFeedback);
+
+// POST /api/payments/track-event
+router.post("/track-event", authenticateToken, trackEvent);
 
 module.exports = router;

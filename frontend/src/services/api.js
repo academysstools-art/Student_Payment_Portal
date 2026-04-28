@@ -44,7 +44,8 @@ export const paymentAPI = {
   getFlexLogs: () => api.get("/payments/flex-logs"),
   getNBFCAllRows: () => api.get("/payments/nbfc-details"),
   getNBFCContacts: () => api.get("/payments/nbfc-contacts"),
-  submitFeedback: (message) => api.post("/payments/feedback", { message }),
+  submitFeedback: (data) => api.post("/payments/feedback", data),
+  trackEvent: (eventName, eventData) => api.post("/payments/track-event", { eventName, eventData }).catch(() => {}),
 };
 
 export const adminAPI = {

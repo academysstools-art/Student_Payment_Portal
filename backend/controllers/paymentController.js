@@ -1,6 +1,7 @@
 const {
   getStudentFromSheet,
   getStudentRowsFromSheet,
+  appendEventLog,
   SHEET_NAMES,
 } = require("../config/googleSheets");
 
@@ -163,6 +164,31 @@ async function getNBFCContacts(req, res) {
   }
 }
 
+const VALID_EVENTS = [
+  "fee_page_viewed", "time_spent", "scroll_depth",
+  "payment_summary_viewed", "covered_amount_viewed", "emi_details_viewed",
+  "clicked_payment_history", "clicked_contact_jodo", "clicked_contact_nbfc", "clicked_chat_support",
+  "feedback_opened", "feedback_abandoned", "feedback_submitted",
+];
+
+function trackEvent(req, res) {
+  const { eventName, eventData } = req.body;
+  if (!eventName || !VALID_EVENTS.includes(eventName)) {
+    return res.status(400).json({ error: "Invalid event name" });
+  }
+
+  // Fire-and-forget — respond immediately, log async
+  appendEventLog({
+    userId: req.user.userId,
+    name: req.user.name,
+    programme: req.user.programme || "",
+    eventName,
+    eventData: eventData || null,
+  });
+
+  res.json({ success: true });
+}
+
 module.exports = {
   getPaymentSummary,
   getNBFCDetails,
@@ -170,4 +196,5 @@ module.exports = {
   getFlexPaymentLogs,
   getNBFCAllRows,
   getNBFCContacts,
+  trackEvent,
 };

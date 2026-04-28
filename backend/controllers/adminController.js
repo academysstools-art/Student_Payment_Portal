@@ -3,6 +3,7 @@ const {
   getSheetData,
   getStudentFromSheet,
   getStudentRowsFromSheet,
+  appendFeedback,
   SHEET_NAMES,
 } = require("../config/googleSheets");
 const { loginLogs } = require("./authController");
@@ -56,9 +57,63 @@ async function getAnalytics(req, res) {
         timestamp: row["Timestamp"] || "",
       }));
     } catch (err) {
-      // Fall back to in-memory if sheet read fails
       console.error("Failed to read login logs sheet, using in-memory:", err.message);
       logs = loginLogs;
+    }
+
+    // Read event logs for aggregation
+    let eventStats = null;
+    try {
+      const eventRows = await getSheetData(SHEET_NAMES.EVENT_LOGS);
+      if (eventRows && eventRows.length > 0) {
+        const counts = {};
+        const timeSpentValues = [];
+        const scrollDepthValues = [];
+
+        for (const row of eventRows) {
+          const name = row["Event Name"] || "";
+          counts[name] = (counts[name] || 0) + 1;
+
+          if (name === "time_spent") {
+            try {
+              const data = JSON.parse(row["Event Data"] || "{}");
+              if (data.seconds) timeSpentValues.push(data.seconds);
+            } catch {}
+          }
+          if (name === "scroll_depth") {
+            try {
+              const data = JSON.parse(row["Event Data"] || "{}");
+              if (data.maxPercent) scrollDepthValues.push(data.maxPercent);
+            } catch {}
+          }
+        }
+
+        const avg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0;
+
+        eventStats = {
+          totalPageViews: counts["fee_page_viewed"] || 0,
+          avgTimeSpent: avg(timeSpentValues),
+          avgScrollDepth: avg(scrollDepthValues),
+          sectionViews: {
+            paymentSummary: counts["payment_summary_viewed"] || 0,
+            coveredAmount: counts["covered_amount_viewed"] || 0,
+            emiDetails: counts["emi_details_viewed"] || 0,
+          },
+          actionCounts: {
+            paymentHistory: counts["clicked_payment_history"] || 0,
+            contactJodo: counts["clicked_contact_jodo"] || 0,
+            contactNbfc: counts["clicked_contact_nbfc"] || 0,
+            chatSupport: counts["clicked_chat_support"] || 0,
+          },
+          feedbackFunnel: {
+            opened: counts["feedback_opened"] || 0,
+            abandoned: counts["feedback_abandoned"] || 0,
+            submitted: counts["feedback_submitted"] || 0,
+          },
+        };
+      }
+    } catch (err) {
+      console.error("Failed to read event logs:", err.message);
     }
 
     const uniqueStudents = [...new Set(logs.map((l) => l.userId))];
@@ -66,6 +121,7 @@ async function getAnalytics(req, res) {
       totalLogins: logs.length,
       uniqueStudents: uniqueStudents.length,
       recentLogins: logs.slice(-50).reverse(),
+      eventStats,
     });
   } catch (error) {
     console.error("Analytics error:", error.message);
@@ -172,26 +228,56 @@ async function getStudentDetails(req, res) {
   }
 }
 
-function getFeedback(req, res) {
-  res.json(feedbackList.slice().reverse());
+async function getFeedback(req, res) {
+  try {
+    const sheetData = await getSheetData(SHEET_NAMES.FEEDBACK);
+    const entries = (sheetData || []).map((row) => ({
+      id: row["Timestamp"] || Date.now().toString(),
+      userId: row["UID"] || "",
+      name: row["Student Name"] || "",
+      programme: row["Programme"] || "",
+      rating: parseInt(row["Rating"], 10) || 0,
+      selectedOptions: (row["Selected Options"] || "").split(", ").filter(Boolean),
+      comments: row["Comments"] || "",
+      timestamp: row["Timestamp"] || "",
+    }));
+    res.json(entries.reverse());
+  } catch (err) {
+    console.error("Failed to read feedback sheet, using in-memory:", err.message);
+    res.json(feedbackList.slice().reverse());
+  }
 }
 
-function submitFeedback(req, res) {
+async function submitFeedback(req, res) {
   try {
-    const { message } = req.body;
-    if (!message || !message.trim()) {
-      return res.status(400).json({ error: "Message is required" });
+    const { rating, selectedOptions, comments } = req.body;
+
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ error: "Rating (1-5) is required" });
     }
 
     const entry = {
       id: Date.now().toString(),
       userId: req.user.userId,
       name: req.user.name,
-      message: message.trim(),
+      programme: req.user.programme || "",
+      rating,
+      selectedOptions: selectedOptions || [],
+      comments: (comments || "").trim(),
       timestamp: new Date().toISOString(),
     };
 
     feedbackList.push(entry);
+
+    appendFeedback({
+      userId: req.user.userId,
+      name: req.user.name,
+      programme: req.user.programme || "",
+      rating,
+      selectedOptions: selectedOptions || [],
+      comments: (comments || "").trim(),
+    });
+
     res.json({ success: true, feedback: entry });
   } catch (error) {
     console.error("Feedback error:", error.message);

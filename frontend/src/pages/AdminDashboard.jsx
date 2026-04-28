@@ -61,6 +61,8 @@ function AnalyticsTab() {
   if (loading) return <Spinner />;
   if (!data) return <Empty text="Failed to load analytics" />;
 
+  const ev = data.eventStats;
+
   return (
     <div className="space-y-4">
       {/* Stat Cards */}
@@ -73,6 +75,48 @@ function AnalyticsTab() {
             : "None"
         } color="amber" />
       </div>
+
+      {/* Event Stats */}
+      {ev && (
+        <>
+          <div className="px-1 pt-2">
+            <h3 className="font-black text-sm text-slate-800">Page Engagement</h3>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <StatCard icon={Activity} label="Page Views" value={ev.totalPageViews} color="blue" />
+            <StatCard icon={Clock} label="Avg Time Spent" value={`${ev.avgTimeSpent}s`} color="emerald" />
+            <StatCard icon={Activity} label="Avg Scroll Depth" value={`${ev.avgScrollDepth}%`} color="amber" />
+          </div>
+
+          <div className="px-1 pt-2">
+            <h3 className="font-black text-sm text-slate-800">Section Views</h3>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <StatCard icon={Activity} label="Payment Summary" value={ev.sectionViews.paymentSummary} color="blue" />
+            <StatCard icon={Activity} label="Covered Amount" value={ev.sectionViews.coveredAmount} color="emerald" />
+            <StatCard icon={Activity} label="EMI Details" value={ev.sectionViews.emiDetails} color="amber" />
+          </div>
+
+          <div className="px-1 pt-2">
+            <h3 className="font-black text-sm text-slate-800">User Actions</h3>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <StatCard icon={Activity} label="Payment History" value={ev.actionCounts.paymentHistory} color="blue" />
+            <StatCard icon={Activity} label="Contact JODO" value={ev.actionCounts.contactJodo} color="emerald" />
+            <StatCard icon={Activity} label="Contact NBFC" value={ev.actionCounts.contactNbfc} color="amber" />
+            <StatCard icon={Activity} label="Chat Support" value={ev.actionCounts.chatSupport} color="blue" />
+          </div>
+
+          <div className="px-1 pt-2">
+            <h3 className="font-black text-sm text-slate-800">Feedback Funnel</h3>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <StatCard icon={MessageSquare} label="Opened" value={ev.feedbackFunnel.opened} color="blue" />
+            <StatCard icon={MessageSquare} label="Abandoned" value={ev.feedbackFunnel.abandoned} color="amber" />
+            <StatCard icon={MessageSquare} label="Submitted" value={`${ev.feedbackFunnel.submitted}${ev.feedbackFunnel.opened > 0 ? ` (${Math.round((ev.feedbackFunnel.submitted / ev.feedbackFunnel.opened) * 100)}%)` : ""}`} color="emerald" />
+          </div>
+        </>
+      )}
 
       {/* Recent Logins Table */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -355,17 +399,53 @@ function FeedbackTab() {
       ) : (
         <div className="space-y-2">
           {feedback.map((fb) => (
-            <div key={fb.id} className="bg-white p-3 rounded-xl border border-slate-200">
+            <div
+              key={fb.id}
+              className={`bg-white p-3 rounded-xl border ${
+                fb.rating >= 4 ? "border-emerald-200" : fb.rating > 0 ? "border-amber-200" : "border-slate-200"
+              }`}
+            >
               <div className="flex justify-between items-start mb-1.5">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-black text-blue-900">{fb.userId}</span>
                   <span className="text-[10px] text-slate-400">{fb.name}</span>
                 </div>
-                <span className="text-[10px] text-slate-400">
-                  {new Date(fb.timestamp).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" })}
-                </span>
+                <div className="flex items-center gap-2">
+                  {fb.rating > 0 && (
+                    <span className="text-xs tracking-wide">
+                      {Array.from({ length: 5 }, (_, i) => (
+                        <span key={i} className={i < fb.rating ? "text-amber-400" : "text-slate-200"}>&#9733;</span>
+                      ))}
+                    </span>
+                  )}
+                  <span className="text-[10px] text-slate-400">
+                    {new Date(fb.timestamp).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" })}
+                  </span>
+                </div>
               </div>
-              <p className="text-xs text-slate-700 leading-relaxed">{fb.message}</p>
+              {fb.selectedOptions && fb.selectedOptions.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-1.5">
+                  {fb.selectedOptions.map((opt) => (
+                    <span
+                      key={opt}
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                        fb.rating >= 4
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          : "bg-amber-50 text-amber-700 border border-amber-200"
+                      }`}
+                    >
+                      {opt}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {fb.comments && (
+                <p className="text-xs text-slate-700 leading-relaxed">{fb.comments}</p>
+              )}
+              {/* Fallback for old message-only feedback */}
+              {!fb.rating && fb.message && (
+                <p className="text-xs text-slate-700 leading-relaxed">{fb.message}</p>
+              )}
             </div>
           ))}
         </div>

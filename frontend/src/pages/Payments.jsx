@@ -714,29 +714,29 @@ export default function Payments() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {emiGroups.map((group) => (
-                          <tr key={group.nbfcName}>
-                            <td className="py-2.5 px-3 font-semibold text-slate-700 whitespace-nowrap">
-                              {group.nbfcName}
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-800 font-bold">
-                              {fmt(group.totalLoanAmount)}
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-800 font-bold">
-                              {fmt(group.rows[0]?.emiAmount)}
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
-                              {group.rows[0]?.tenure || "--"}
-                            </td>
-                            <td className="py-2.5 px-3 text-right">
-                              {group.rows[0] && (
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusColor(group.rows[0].status)}`}>
-                                  {group.rows[0].status || "--"}
+                        {emiGroups.flatMap((group) =>
+                          group.rows.map((row, idx) => (
+                            <tr key={`${group.nbfcName}-${idx}`}>
+                              <td className="py-2.5 px-3 font-semibold text-slate-700 whitespace-nowrap">
+                                {group.nbfcName}
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-800 font-bold">
+                                {fmt(row.loanAmount)}
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-800 font-bold">
+                                {fmt(row.emiAmount)}
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
+                                {row.tenure || "--"}
+                              </td>
+                              <td className="py-2.5 px-3 text-right">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusColor(row.status)}`}>
+                                  {row.status || "--"}
                                 </span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
+                              </td>
+                            </tr>
+                          ))
+                        )}
                       </tbody>
                     </table>
                   </div>

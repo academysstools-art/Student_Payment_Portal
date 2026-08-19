@@ -6,7 +6,7 @@ const loginLogs = [];
 
 async function loginWithUserId(req, res) {
   try {
-    const { userId } = req.body;
+    const { userid: userId } = req.body;
 
     if (!userId) {
       return res.status(400).json({ error: "User ID is required" });

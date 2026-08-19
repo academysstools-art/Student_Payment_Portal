@@ -2,9 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { authAPI } from "../services/api";
-import { TrendingUp, Loader2, ExternalLink } from "lucide-react";
-
-const SSO_LOGIN_URL = import.meta.env.VITE_SSO_LOGIN_URL;
+import { TrendingUp, Loader2 } from "lucide-react";
 
 export default function Login() {
   const [userId, setUserId] = useState("");
@@ -48,23 +46,6 @@ export default function Login() {
           </p>
         </div>
 
-        {/* Student Login */}
-        {SSO_LOGIN_URL && (
-          <div className="mb-4">
-            <a
-              href={SSO_LOGIN_URL}
-              className="w-full bg-blue-900 hover:bg-blue-800 text-white font-black text-sm uppercase tracking-widest py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2 no-underline"
-            >
-              <ExternalLink size={16} />
-              Login with NxtWave Account
-            </a>
-            <div className="flex items-center gap-3 my-4">
-              <div className="flex-1 h-px bg-slate-200"></div>
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">or</span>
-              <div className="flex-1 h-px bg-slate-200"></div>
-            </div>
-          </div>
-        )}
         <form onSubmit={handleStudentLogin} className="space-y-5">
           <div>
             <label

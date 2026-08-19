@@ -267,7 +267,7 @@ function StudentsTab() {
               <DetailItem label="Name" value={selected.name} />
               <DetailItem label="Programme" value={selected.programme} />
               <DetailItem label="Product Code" value={selected.productCode} />
-              <DetailItem label="LPOAD" value={selected.lpoad} />
+              <DetailItem label="User Type" value={selected.userType} />
               <DetailItem label="Total Fee" value={fmt(selected.totalProgrammeFee)} />
               <DetailItem label="Discount" value={fmt(selected.discountApplied)} />
               <DetailItem label="Net Payable" value={fmt(selected.totalFeePayable)} />

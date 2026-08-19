@@ -35,10 +35,6 @@ export const authAPI = {
   login: (userId) => api.post("/auth/login", { userId }),
 };
 
-export const ssoAPI = {
-  validateToken: (token) => api.post("/sso/validate-token", { token }),
-};
-
 export const paymentAPI = {
   getSummary: () => api.get("/payments/summary"),
   getNBFCDetails: () => api.get("/payments/nbfc"),

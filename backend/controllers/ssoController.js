@@ -1,12 +1,23 @@
 const jwt = require("jsonwebtoken");
-const { getStudentFromSheet, appendLoginLog, SHEET_NAMES } = require("../config/googleSheets");
-const { loginLogs } = require("./authController");
+const {
+  findEligibleStudent,
+  issueSession,
+  toStudentPayload,
+} = require("./authController");
 
 // Resolve UID from various field names the SSO system might send
 function resolveUserId(body) {
   return (
     body.user_id || body.userId || body.uid || body.UID || ""
   ).trim() || null;
+}
+
+function signHandoffToken(userId) {
+  return jwt.sign(
+    { userId, type: "sso_handoff" },
+    process.env.JWT_SECRET,
+    { expiresIn: "5m" }
+  );
 }
 
 // Called BY Forms backend (server-to-server)
@@ -34,17 +45,12 @@ async function generateToken(req, res) {
       });
     }
 
-    const student = await getStudentFromSheet(SHEET_NAMES.USER_BASIC_DETAILS, userId);
+    const student = await findEligibleStudent(userId);
     if (!student) {
       return res.status(404).json({ error: "Student not found" });
     }
 
-    // Short-lived token (5 minutes) for SSO handoff
-    const token = jwt.sign(
-      { userId: student["UID"], type: "sso_handoff" },
-      process.env.JWT_SECRET,
-      { expiresIn: "5m" }
-    );
+    const token = signHandoffToken(student.user_id);
 
     // Build redirect URL for the SSO system
     const frontendUrl = (process.env.FRONTEND_URL || "").replace(/\/+$/, "");
@@ -78,45 +84,14 @@ async function validateToken(req, res) {
       return res.status(401).json({ error: "Invalid token type" });
     }
 
-    const student = await getStudentFromSheet(SHEET_NAMES.USER_BASIC_DETAILS, decoded.userId);
+    const student = await findEligibleStudent(decoded.userId);
     if (!student) {
       return res.status(404).json({ error: "Student not found" });
     }
 
-    // Create full 24h session JWT
-    const sessionToken = jwt.sign(
-      {
-        userId: student["UID"],
-        name: student["Student Name"],
-        programme: student["Programme"],
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "24h" }
-    );
-
-    // Track login in-memory + sheet
-    loginLogs.push({
-      userId: student["UID"],
-      name: student["Student Name"],
-      programme: student["Programme"],
-      method: "sso",
-      timestamp: new Date().toISOString(),
-    });
-    appendLoginLog({
-      userId: student["UID"],
-      name: student["Student Name"],
-      programme: student["Programme"],
-      method: "sso",
-    });
-
     res.json({
-      token: sessionToken,
-      student: {
-        userId: student["UID"],
-        name: student["Student Name"],
-        programme: student["Programme"],
-        productCode: student["Product code"],
-      },
+      token: issueSession(student),
+      student: toStudentPayload(student),
     });
   } catch (error) {
     console.error("SSO validate-token error:", error.message);
@@ -126,49 +101,29 @@ async function validateToken(req, res) {
 
 // Browser redirect callback — SSO system redirects here with user_id in query
 async function ssoCallback(req, res) {
-  try {
-    console.log("[SSO Callback] Full URL:", req.originalUrl);
-    console.log("[SSO Callback] Query params:", JSON.stringify(req.query));
-    console.log("[SSO Callback] Raw user_id value:", JSON.stringify(req.query.user_id));
+  const frontendUrl = (process.env.FRONTEND_URL || "").replace(/\/+$/, "");
 
+  try {
     const userId = (
       req.query.user_id || req.query.userId || req.query.uid || ""
     ).trim();
-
-    console.log("[SSO Callback] Resolved userId:", JSON.stringify(userId));
-
-    const frontendUrl = (process.env.FRONTEND_URL || "").replace(/\/+$/, "");
-    console.log("[SSO Callback] FRONTEND_URL:", frontendUrl);
 
     if (!frontendUrl) {
       return res.status(500).send("FRONTEND_URL not configured");
     }
 
     if (!userId) {
-      console.log("[SSO Callback] No userId found, redirecting to error");
       return res.redirect(`${frontendUrl}/sso?error=missing_user_id`);
     }
 
-    console.log("[SSO Callback] Looking up student with UID:", userId);
-    const student = await getStudentFromSheet(SHEET_NAMES.USER_BASIC_DETAILS, userId);
-    console.log("[SSO Callback] Student found:", student ? "YES" : "NO");
-
+    const student = await findEligibleStudent(userId);
     if (!student) {
-      console.log("[SSO Callback] Student not found, redirecting to:", `${frontendUrl}/sso?error=student_not_found`);
       return res.redirect(`${frontendUrl}/sso?error=student_not_found`);
     }
 
-    // Generate 5-min handoff token and redirect to frontend
-    const token = jwt.sign(
-      { userId: student["UID"], type: "sso_handoff" },
-      process.env.JWT_SECRET,
-      { expiresIn: "5m" }
-    );
-
-    res.redirect(`${frontendUrl}/sso?token=${token}`);
+    res.redirect(`${frontendUrl}/sso?token=${signHandoffToken(student.user_id)}`);
   } catch (error) {
     console.error("SSO callback error:", error.message);
-    const frontendUrl = (process.env.FRONTEND_URL || "").replace(/\/+$/, "");
     if (frontendUrl) {
       return res.redirect(`${frontendUrl}/sso?error=server_error`);
     }

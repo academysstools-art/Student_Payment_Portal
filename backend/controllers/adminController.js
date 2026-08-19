@@ -1,19 +1,27 @@
 const jwt = require("jsonwebtoken");
 const {
-  getSheetData,
-  getStudentFromSheet,
-  getStudentRowsFromSheet,
+  getUserFeeDetails,
+  getApplicationDetails,
+  getFlexPaymentLogs,
+  getCompanyPaymentLogs,
+  searchUsers,
+  getAllUserFeeDetails,
+  getLoginTotals,
+  getRecentLogins,
+  getEventStats,
+  getFeedbackEntries,
   appendFeedback,
-  SHEET_NAMES,
-} = require("../config/googleSheets");
-const { loginLogs } = require("./authController");
+} = require("../config/bigquery");
+const {
+  toNbfcRow,
+  toCompanyLog,
+  toFlexLog,
+  toFeeSummary,
+} = require("./paymentController");
 
 // Hardcoded admin credentials
 const ADMIN_EMAIL = "admin@nxtwave.in";
 const ADMIN_PASSWORD = "payments@status";
-
-// In-memory feedback store
-const feedbackList = [];
 
 async function adminLogin(req, res) {
   try {
@@ -43,85 +51,53 @@ async function adminLogin(req, res) {
   }
 }
 
+function toEventStats(stats) {
+  if (!stats) return null;
+  return {
+    totalPageViews: stats.fee_page_viewed || 0,
+    avgTimeSpent: Math.round(stats.avg_time_spent || 0),
+    avgScrollDepth: Math.round(stats.avg_scroll_depth || 0),
+    sectionViews: {
+      paymentSummary: stats.payment_summary_viewed || 0,
+      coveredAmount: stats.covered_amount_viewed || 0,
+      emiDetails: stats.emi_details_viewed || 0,
+    },
+    actionCounts: {
+      paymentHistory: stats.clicked_payment_history || 0,
+      contactJodo: stats.clicked_contact_jodo || 0,
+      contactNbfc: stats.clicked_contact_nbfc || 0,
+      chatSupport: stats.clicked_chat_support || 0,
+    },
+    feedbackFunnel: {
+      opened: stats.feedback_opened || 0,
+      abandoned: stats.feedback_abandoned || 0,
+      submitted: stats.feedback_submitted || 0,
+    },
+  };
+}
+
 async function getAnalytics(req, res) {
   try {
-    // Read persistent login logs from sheet
-    let logs = [];
-    try {
-      const sheetLogs = await getSheetData(SHEET_NAMES.LOGIN_LOGS);
-      logs = (sheetLogs || []).map((row) => ({
-        userId: row["UID"] || "",
-        name: row["Student Name"] || "",
-        programme: row["Programme"] || "",
-        method: row["Login Method"] || "direct",
-        timestamp: row["Timestamp"] || "",
-      }));
-    } catch (err) {
-      console.error("Failed to read login logs sheet, using in-memory:", err.message);
-      logs = loginLogs;
-    }
+    const [totals, recent, eventStats] = await Promise.all([
+      getLoginTotals(),
+      getRecentLogins(50),
+      getEventStats().catch((err) => {
+        console.error("Event stats unavailable:", err.message);
+        return null;
+      }),
+    ]);
 
-    // Read event logs for aggregation
-    let eventStats = null;
-    try {
-      const eventRows = await getSheetData(SHEET_NAMES.EVENT_LOGS);
-      if (eventRows && eventRows.length > 0) {
-        const counts = {};
-        const timeSpentValues = [];
-        const scrollDepthValues = [];
-
-        for (const row of eventRows) {
-          const name = row["Event Name"] || "";
-          counts[name] = (counts[name] || 0) + 1;
-
-          if (name === "time_spent") {
-            try {
-              const data = JSON.parse(row["Event Data"] || "{}");
-              if (data.seconds) timeSpentValues.push(data.seconds);
-            } catch {}
-          }
-          if (name === "scroll_depth") {
-            try {
-              const data = JSON.parse(row["Event Data"] || "{}");
-              if (data.maxPercent) scrollDepthValues.push(data.maxPercent);
-            } catch {}
-          }
-        }
-
-        const avg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0;
-
-        eventStats = {
-          totalPageViews: counts["fee_page_viewed"] || 0,
-          avgTimeSpent: avg(timeSpentValues),
-          avgScrollDepth: avg(scrollDepthValues),
-          sectionViews: {
-            paymentSummary: counts["payment_summary_viewed"] || 0,
-            coveredAmount: counts["covered_amount_viewed"] || 0,
-            emiDetails: counts["emi_details_viewed"] || 0,
-          },
-          actionCounts: {
-            paymentHistory: counts["clicked_payment_history"] || 0,
-            contactJodo: counts["clicked_contact_jodo"] || 0,
-            contactNbfc: counts["clicked_contact_nbfc"] || 0,
-            chatSupport: counts["clicked_chat_support"] || 0,
-          },
-          feedbackFunnel: {
-            opened: counts["feedback_opened"] || 0,
-            abandoned: counts["feedback_abandoned"] || 0,
-            submitted: counts["feedback_submitted"] || 0,
-          },
-        };
-      }
-    } catch (err) {
-      console.error("Failed to read event logs:", err.message);
-    }
-
-    const uniqueStudents = [...new Set(logs.map((l) => l.userId))];
     res.json({
-      totalLogins: logs.length,
-      uniqueStudents: uniqueStudents.length,
-      recentLogins: logs.slice(-50).reverse(),
-      eventStats,
+      totalLogins: totals.total_logins || 0,
+      uniqueStudents: totals.unique_students || 0,
+      recentLogins: recent.map((row) => ({
+        userId: row.user_id,
+        name: row.name || "",
+        programme: row.programme || "",
+        method: "sso",
+        timestamp: row.login_datetime,
+      })),
+      eventStats: toEventStats(eventStats),
     });
   } catch (error) {
     console.error("Analytics error:", error.message);
@@ -131,41 +107,23 @@ async function getAnalytics(req, res) {
 
 async function searchStudents(req, res) {
   try {
-    const query = (req.query.q || "").trim().toLowerCase();
+    const query = (req.query.q || "").trim();
     if (!query) {
       return res.json([]);
     }
 
-    const [basicData, feeData] = await Promise.all([
-      getSheetData(SHEET_NAMES.USER_BASIC_DETAILS),
-      getSheetData(SHEET_NAMES.USER_FEE_DETAILS),
-    ]);
+    const rows = await searchUsers(query);
 
-    // Index fee data by UID for fast lookup
-    const feeByUid = {};
-    for (const row of feeData) {
-      if (row["UID"]) feeByUid[row["UID"].trim().toLowerCase()] = row;
-    }
-
-    const results = basicData
-      .filter((row) => {
-        const uid = (row["UID"] || "").toLowerCase();
-        return uid.includes(query);
-      })
-      .slice(0, 20)
-      .map((row) => {
-        const fee = feeByUid[(row["UID"] || "").trim().toLowerCase()] || {};
-        return {
-          userId: row["UID"],
-          name: row["Student Name"],
-          programme: row["Programme"],
-          totalFeePayable: fee["Total Fee Payble"] || "",
-          totalAmountCovered: fee["Total Amount Covered"] || "",
-          remainingAmountToPay: fee["Remaining Amount to Pay"] || "",
-        };
-      });
-
-    res.json(results);
+    res.json(
+      rows.map((row) => ({
+        userId: row.user_id,
+        name: row.first_name,
+        programme: row.program_name,
+        totalFeePayable: row.total_fee_payble,
+        totalAmountCovered: row.total_amount_covered,
+        remainingAmountToPay: row.remaining_amount_to_pay,
+      }))
+    );
   } catch (error) {
     console.error("Search error:", error.message);
     res.status(500).json({ error: "Search failed" });
@@ -176,51 +134,36 @@ async function getStudentDetails(req, res) {
   try {
     const { userId } = req.params;
 
-    const [basicDetails, feeDetails, nbfcRows, companyLogs, flexLogs] = await Promise.all([
-      getStudentFromSheet(SHEET_NAMES.USER_BASIC_DETAILS, userId),
-      getStudentFromSheet(SHEET_NAMES.USER_FEE_DETAILS, userId),
-      getStudentRowsFromSheet(SHEET_NAMES.NBFC_DISBURSED_DETAILS, userId),
-      getStudentRowsFromSheet(SHEET_NAMES.PAYMENT_TO_COMPANY_LOGS, userId),
-      getStudentRowsFromSheet(SHEET_NAMES.FLEX_PAYMENT_LOGS, userId),
+    const [feeDetails, applications, companyLogs, flexLogs] = await Promise.all([
+      getUserFeeDetails(userId),
+      getApplicationDetails(userId),
+      getCompanyPaymentLogs(userId),
+      getFlexPaymentLogs(userId),
     ]);
 
-    if (!basicDetails) {
+    if (!feeDetails) {
       return res.status(404).json({ error: "Student not found" });
     }
 
+    const summary = toFeeSummary(feeDetails);
+
     res.json({
-      userId: basicDetails["UID"],
-      name: basicDetails["Student Name"],
-      programme: basicDetails["Programme"],
-      productCode: basicDetails["Product code"],
-      lpoad: basicDetails["LPOAD"],
-      totalProgrammeFee: feeDetails?.["Total Programme Fee"] || "",
-      discountApplied: feeDetails?.["Discount Applied"] || "",
-      totalFeePayable: feeDetails?.["Total Fee Payble"] || "",
-      amountPaidInFlex: feeDetails?.["Amount Paid in Jodo Flex"] || "",
-      amountPaidToNxtWave: feeDetails?.["Amount Paid to NxtWave"] || "",
-      nbfcLoanAmountCovered: feeDetails?.["Nbfc Loan Amount Covered"] || "",
-      totalAmountCovered: feeDetails?.["Total Amount Covered"] || "",
-      remainingAmountToPay: feeDetails?.["Remaining Amount to Pay"] || "",
-      nbfcRows: (nbfcRows || []).map((r) => ({
-        nbfcName: r["NBFC Name"],
-        loanAmount: r["Loan Amount"],
-        tenure: r["Tenure (Start Month and End Month)"],
-        emiAmount: r["EMI Amount"],
-        status: r["Status"],
-        dueDate: r["Due Date (Tenure end Month + 1Month)"],
-      })),
-      companyLogs: (companyLogs || []).map((r) => ({
-        paidDate: r["Paid Date"],
-        paidAmount: r["Paid Amount"],
-        paymentStatus: r["Payment Status"],
-      })),
-      flexLogs: (flexLogs || []).map((r) => ({
-        paidDate: r["Paid Date"],
-        paidAmount: r["Paid Amount"],
-        paymentStatus: r["Payment Status"],
-        paymentMode: r["Payment Mode"],
-      })),
+      userId: feeDetails.user_id,
+      name: summary.studentName,
+      programme: summary.programme,
+      productCode: summary.productCode,
+      userType: summary.userType,
+      totalProgrammeFee: summary.totalProgrammeFee,
+      discountApplied: summary.discountApplied,
+      totalFeePayable: summary.totalFeePayable,
+      amountPaidInFlex: summary.amountPaidInFlex,
+      amountPaidToNxtWave: summary.amountPaidToNxtWave,
+      nbfcLoanAmountCovered: summary.nbfcLoanAmountCovered,
+      totalAmountCovered: summary.totalAmountCovered,
+      remainingAmountToPay: summary.remainingAmountToPay,
+      nbfcRows: applications.map(toNbfcRow),
+      companyLogs: companyLogs.map(toCompanyLog),
+      flexLogs: flexLogs.map(toFlexLog),
     });
   } catch (error) {
     console.error("Student details error:", error.message);
@@ -230,21 +173,23 @@ async function getStudentDetails(req, res) {
 
 async function getFeedback(req, res) {
   try {
-    const sheetData = await getSheetData(SHEET_NAMES.FEEDBACK);
-    const entries = (sheetData || []).map((row) => ({
-      id: row["Timestamp"] || Date.now().toString(),
-      userId: row["UID"] || "",
-      name: row["Student Name"] || "",
-      programme: row["Programme"] || "",
-      rating: parseInt(row["Rating"], 10) || 0,
-      selectedOptions: (row["Selected Options"] || "").split(", ").filter(Boolean),
-      comments: row["Comments"] || "",
-      timestamp: row["Timestamp"] || "",
-    }));
-    res.json(entries.reverse());
-  } catch (err) {
-    console.error("Failed to read feedback sheet, using in-memory:", err.message);
-    res.json(feedbackList.slice().reverse());
+    const rows = await getFeedbackEntries();
+
+    res.json(
+      rows.map((row) => ({
+        id: row.submitted_at,
+        userId: row.user_id,
+        name: row.student_name,
+        programme: row.programme,
+        rating: row.rating || 0,
+        selectedOptions: (row.selected_options || "").split(", ").filter(Boolean),
+        comments: row.comments || "",
+        timestamp: row.submitted_at,
+      }))
+    );
+  } catch (error) {
+    console.error("Feedback error:", error.message);
+    res.status(500).json({ error: "Failed to fetch feedback" });
   }
 }
 
@@ -257,28 +202,17 @@ async function submitFeedback(req, res) {
     }
 
     const entry = {
-      id: Date.now().toString(),
       userId: req.user.userId,
       name: req.user.name,
       programme: req.user.programme || "",
       rating,
       selectedOptions: selectedOptions || [],
       comments: (comments || "").trim(),
-      timestamp: new Date().toISOString(),
     };
 
-    feedbackList.push(entry);
+    await appendFeedback(entry);
 
-    appendFeedback({
-      userId: req.user.userId,
-      name: req.user.name,
-      programme: req.user.programme || "",
-      rating,
-      selectedOptions: selectedOptions || [],
-      comments: (comments || "").trim(),
-    });
-
-    res.json({ success: true, feedback: entry });
+    res.json({ success: true, feedback: { ...entry, timestamp: new Date().toISOString() } });
   } catch (error) {
     console.error("Feedback error:", error.message);
     res.status(500).json({ error: "Failed to submit feedback" });
@@ -287,42 +221,26 @@ async function submitFeedback(req, res) {
 
 async function exportCSV(req, res) {
   try {
-    const [basicData, feeData] = await Promise.all([
-      getSheetData(SHEET_NAMES.USER_BASIC_DETAILS),
-      getSheetData(SHEET_NAMES.USER_FEE_DETAILS),
-    ]);
+    const rows = await getAllUserFeeDetails();
 
-    // Index fee data by UID
-    const feeByUid = {};
-    for (const row of feeData) {
-      if (row["UID"]) feeByUid[row["UID"].trim().toLowerCase()] = row;
-    }
-
-    // Merge basic + fee
-    const allData = basicData.map((basic) => {
-      const fee = feeByUid[(basic["UID"] || "").trim().toLowerCase()] || {};
-      return { ...basic, ...fee };
-    });
-
-    if (allData.length === 0) {
+    if (rows.length === 0) {
       return res.status(404).json({ error: "No data found" });
     }
 
-    const headers = Object.keys(allData[0]);
+    const headers = Object.keys(rows[0]);
     const csvRows = [headers.join(",")];
 
-    for (const row of allData) {
-      const values = headers.map((h) => {
-        const val = (row[h] || "").replace(/"/g, '""');
-        return `"${val}"`;
-      });
-      csvRows.push(values.join(","));
+    for (const row of rows) {
+      csvRows.push(
+        headers
+          .map((h) => `"${String(row[h] ?? "").replace(/"/g, '""')}"`)
+          .join(",")
+      );
     }
 
-    const csv = csvRows.join("\n");
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", "attachment; filename=student_data.csv");
-    res.send(csv);
+    res.send(csvRows.join("\n"));
   } catch (error) {
     console.error("Export error:", error.message);
     res.status(500).json({ error: "Failed to export data" });
@@ -337,5 +255,4 @@ module.exports = {
   getFeedback,
   submitFeedback,
   exportCSV,
-  feedbackList,
 };

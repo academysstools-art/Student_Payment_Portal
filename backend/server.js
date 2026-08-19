@@ -5,7 +5,6 @@ const cors = require("cors");
 const authRoutes = require("./routes/auth");
 const paymentRoutes = require("./routes/payments");
 const adminRoutes = require("./routes/admin");
-const ssoRoutes = require("./routes/sso");
 
 const app = express();
 
@@ -19,6 +18,8 @@ app.use(
       const allowed = [
         "http://localhost:5173",
         "http://localhost:5174",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
       ];
 
       // Add FRONTEND_URL (strip trailing slash)
@@ -41,7 +42,6 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/admin", adminRoutes);
-app.use("/api/sso", ssoRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {

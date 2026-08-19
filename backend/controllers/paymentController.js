@@ -1,39 +1,71 @@
 const {
-  getStudentFromSheet,
-  getStudentRowsFromSheet,
+  getUserFeeDetails,
+  getApplicationDetails,
+  getFlexPaymentLogs: fetchFlexPaymentLogs,
+  getCompanyPaymentLogs: fetchCompanyPaymentLogs,
+  getNbfcSupportMails,
   appendEventLog,
-  SHEET_NAMES,
-} = require("../config/googleSheets");
+} = require("../config/bigquery");
+const { formatDate } = require("../utils/format");
+
+// ---------- Row mappers (BigQuery columns -> API shape) ----------
+
+function toNbfcRow(row) {
+  return {
+    nbfcName: row.nbfc_name,
+    loanAmount: row.loan_amount,
+    tenure: row.start_and_end_date,
+    emiAmount: row.emi_amount,
+    status: row.status,
+    dueDate: row.due_month,
+  };
+}
+
+function toCompanyLog(row) {
+  return {
+    paidDate: formatDate(row.paid_datetime),
+    paidAmount: row.payment_amount,
+    paymentStatus: row.Payment_status,
+  };
+}
+
+function toFlexLog(row) {
+  return {
+    paidDate: formatDate(row.paid_datetime),
+    paidAmount: row.amount_paid,
+    paymentStatus: row.payment_status,
+    paymentMode: row.mode_of_payment,
+  };
+}
+
+function toFeeSummary(feeDetails) {
+  return {
+    studentName: feeDetails.first_name,
+    programme: feeDetails.program_name,
+    productCode: feeDetails.product_code,
+    userType: feeDetails.user_type,
+    totalProgrammeFee: feeDetails.total_fee,
+    discountApplied: feeDetails.total_discount,
+    totalFeePayable: feeDetails.total_fee_payble,
+    amountPaidToNxtWave: feeDetails.total_amount_paid_to_company,
+    amountPaidInFlex: feeDetails.amount_paid_through_monthly_installments,
+    nbfcLoanAmountCovered: feeDetails.total_loan_amount_covered,
+    totalAmountCovered: feeDetails.total_amount_covered,
+    remainingAmountToPay: feeDetails.remaining_amount_to_pay,
+  };
+}
+
+// ---------- Route handlers ----------
 
 async function getPaymentSummary(req, res) {
   try {
-    const userId = req.user.userId;
+    const feeDetails = await getUserFeeDetails(req.user.userId);
 
-    const [basicDetails, feeDetails] = await Promise.all([
-      getStudentFromSheet(SHEET_NAMES.USER_BASIC_DETAILS, userId),
-      getStudentFromSheet(SHEET_NAMES.USER_FEE_DETAILS, userId),
-    ]);
-
-    if (!basicDetails) {
+    if (!feeDetails) {
       return res.status(404).json({ error: "Student data not found" });
     }
 
-    const summary = {
-      studentName: basicDetails["Student Name"],
-      programme: basicDetails["Programme"],
-      productCode: basicDetails["Product code"],
-      lpoad: basicDetails["LPOAD"],
-      totalProgrammeFee: feeDetails?.["Total Programme Fee"] || "",
-      discountApplied: feeDetails?.["Discount Applied"] || "",
-      totalFeePayable: feeDetails?.["Total Fee Payble"] || "",
-      amountPaidToNxtWave: feeDetails?.["Amount Paid to NxtWave"] || "",
-      amountPaidInFlex: feeDetails?.["Amount Paid in Jodo Flex"] || "",
-      nbfcLoanAmountCovered: feeDetails?.["Nbfc Loan Amount Covered"] || "",
-      totalAmountCovered: feeDetails?.["Total Amount Covered"] || "",
-      remainingAmountToPay: feeDetails?.["Remaining Amount to Pay"] || "",
-    };
-
-    res.json(summary);
+    res.json(toFeeSummary(feeDetails));
   } catch (error) {
     console.error("Payment summary error:", error.message);
     res.status(500).json({ error: "Failed to fetch payment summary" });
@@ -42,35 +74,20 @@ async function getPaymentSummary(req, res) {
 
 async function getNBFCDetails(req, res) {
   try {
-    const userId = req.user.userId;
-    const rows = await getStudentRowsFromSheet(SHEET_NAMES.NBFC_DISBURSED_DETAILS, userId);
+    const rows = await getApplicationDetails(req.user.userId);
 
-    if (!rows || rows.length === 0) {
-      return res.json({ nbfcGroups: [] });
-    }
-
-    // Group by NBFC Name
-    const grouped = {};
+    const grouped = new Map();
     for (const row of rows) {
-      const name = (row["NBFC Name"] || "Unknown").trim();
-      if (!grouped[name]) {
-        grouped[name] = {
-          nbfcName: name,
-          totalLoanAmount: 0,
-          rows: [],
-        };
+      const name = (row.nbfc_name || "Unknown").trim();
+      if (!grouped.has(name)) {
+        grouped.set(name, { nbfcName: name, totalLoanAmount: 0, rows: [] });
       }
-      grouped[name].totalLoanAmount += parseFloat(row["Loan Amount"]) || 0;
-      grouped[name].rows.push({
-        loanAmount: row["Loan Amount"],
-        tenure: row["Tenure (Start Month and End Month)"],
-        emiAmount: row["EMI Amount"],
-        status: row["Status"],
-        dueDate: row["Due Date (Tenure end Month + 1Month)"],
-      });
+      const group = grouped.get(name);
+      group.totalLoanAmount += row.loan_amount || 0;
+      group.rows.push(toNbfcRow(row));
     }
 
-    res.json({ nbfcGroups: Object.values(grouped) });
+    res.json({ nbfcGroups: [...grouped.values()] });
   } catch (error) {
     console.error("NBFC details error:", error.message);
     res.status(500).json({ error: "Failed to fetch NBFC details" });
@@ -79,16 +96,8 @@ async function getNBFCDetails(req, res) {
 
 async function getCompanyPaymentLogs(req, res) {
   try {
-    const userId = req.user.userId;
-    const rows = await getStudentRowsFromSheet(SHEET_NAMES.PAYMENT_TO_COMPANY_LOGS, userId);
-
-    const logs = (rows || []).map((row) => ({
-      paidDate: row["Paid Date"],
-      paidAmount: row["Paid Amount"],
-      paymentStatus: row["Payment Status"],
-    }));
-
-    res.json({ logs });
+    const rows = await fetchCompanyPaymentLogs(req.user.userId);
+    res.json({ logs: rows.map(toCompanyLog) });
   } catch (error) {
     console.error("Company payment logs error:", error.message);
     res.status(500).json({ error: "Failed to fetch company payment logs" });
@@ -97,17 +106,8 @@ async function getCompanyPaymentLogs(req, res) {
 
 async function getFlexPaymentLogs(req, res) {
   try {
-    const userId = req.user.userId;
-    const rows = await getStudentRowsFromSheet(SHEET_NAMES.FLEX_PAYMENT_LOGS, userId);
-
-    const logs = (rows || []).map((row) => ({
-      paidDate: row["Paid Date"],
-      paidAmount: row["Paid Amount"],
-      paymentStatus: row["Payment Status"],
-      paymentMode: row["Payment Mode"],
-    }));
-
-    res.json({ logs });
+    const rows = await fetchFlexPaymentLogs(req.user.userId);
+    res.json({ logs: rows.map(toFlexLog) });
   } catch (error) {
     console.error("Flex payment logs error:", error.message);
     res.status(500).json({ error: "Failed to fetch flex payment logs" });
@@ -116,19 +116,8 @@ async function getFlexPaymentLogs(req, res) {
 
 async function getNBFCAllRows(req, res) {
   try {
-    const userId = req.user.userId;
-    const rows = await getStudentRowsFromSheet(SHEET_NAMES.NBFC_DISBURSED_DETAILS, userId);
-
-    const details = (rows || []).map((row) => ({
-      nbfcName: row["NBFC Name"],
-      loanAmount: row["Loan Amount"],
-      tenure: row["Tenure (Start Month and End Month)"],
-      emiAmount: row["EMI Amount"],
-      status: row["Status"],
-      dueDate: row["Due Date (Tenure end Month + 1Month)"],
-    }));
-
-    res.json({ details });
+    const rows = await getApplicationDetails(req.user.userId);
+    res.json({ details: rows.map(toNbfcRow) });
   } catch (error) {
     console.error("NBFC all rows error:", error.message);
     res.status(500).json({ error: "Failed to fetch NBFC detail rows" });
@@ -137,27 +126,13 @@ async function getNBFCAllRows(req, res) {
 
 async function getNBFCContacts(req, res) {
   try {
-    const { getSheetData } = require("../config/googleSheets");
-    const rows = await getSheetData(SHEET_NAMES.NBFC_SUPPORT_CONTACTS);
-
-    // Find columns dynamically (case-insensitive) to handle whitespace/case variations
-    const findValue = (row, ...candidates) => {
-      const keys = Object.keys(row);
-      for (const candidate of candidates) {
-        const match = keys.find(k => k.trim().toLowerCase() === candidate.toLowerCase());
-        if (match && row[match]) return row[match].trim();
-      }
-      return "";
-    };
-
-    const contacts = (rows || []).map((row) => ({
-      nbfcName: findValue(row, "NBFC", "NBFC Name"),
-      email: findValue(row, "Main ID", "Mail ID", "Email", "Email ID"),
-    }));
-
-    console.log("[NBFC Contacts] Found:", contacts);
-
-    res.json({ contacts });
+    const rows = await getNbfcSupportMails();
+    res.json({
+      contacts: rows.map((row) => ({
+        nbfcName: row.nbfc,
+        email: row.support_mail,
+      })),
+    });
   } catch (error) {
     console.error("NBFC contacts error:", error.message);
     res.status(500).json({ error: "Failed to fetch NBFC contacts" });
@@ -197,4 +172,8 @@ module.exports = {
   getNBFCAllRows,
   getNBFCContacts,
   trackEvent,
+  toNbfcRow,
+  toCompanyLog,
+  toFlexLog,
+  toFeeSummary,
 };

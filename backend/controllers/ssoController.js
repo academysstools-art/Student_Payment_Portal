@@ -33,8 +33,9 @@ async function generateToken(req, res) {
       req.headers["x-sso-auth-key"] ||
       req.headers["x-api-key"] ||
       bearer;
-    if (!authKey || authKey !== process.env.SSO_AUTH_KEY) {
-      return res.status(401).json({ error: "Invalid SSO auth key" });
+    const secret = process.env.SSO_AUTH_KEY || process.env.TOKEN_SECRET;
+    if (!secret || authKey !== secret) {
+      return res.status(401).json({ error: "Invalid SSO authentication" });
     }
 
     const userId = resolveUserId(req.body);

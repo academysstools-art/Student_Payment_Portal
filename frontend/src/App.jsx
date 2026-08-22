@@ -5,6 +5,7 @@ import Login from "./pages/Login";
 import AdminLogin from "./pages/AdminLogin";
 import Payments from "./pages/Payments";
 import AdminDashboard from "./pages/AdminDashboard";
+import SSOCallback from "./pages/SSOCallback";
 
 function AdminRoute({ children }) {
   const { isAuthenticated, isAdmin } = useAuth();
@@ -21,6 +22,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Login />} />
           <Route path="/admin-login" element={<AdminLogin />} />
+          <Route path="/sso" element={<SSOCallback />} />
           <Route
             path="/payments"
             element={

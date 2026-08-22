@@ -12,12 +12,22 @@ function resolveUserId(body) {
   ).trim() || null;
 }
 
+const HANDOFF_TTL_SECONDS = 5 * 60;
+
 function signHandoffToken(userId) {
   return jwt.sign(
     { userId, type: "sso_handoff" },
     process.env.JWT_SECRET,
-    { expiresIn: "5m" }
+    { expiresIn: HANDOFF_TTL_SECONDS }
   );
+}
+
+// The caller reads expires_at to know when to stop reusing the token, so derive
+// it from the signed exp claim rather than re-deriving the clock.
+function handoffExpiry(token) {
+  const { exp } = jwt.decode(token) || {};
+  const seconds = exp || Math.floor(Date.now() / 1000) + HANDOFF_TTL_SECONDS;
+  return new Date(seconds * 1000).toISOString();
 }
 
 // Called BY Forms backend (server-to-server)
@@ -59,7 +69,14 @@ async function generateToken(req, res) {
       ? `${frontendUrl}/sso?token=${token}`
       : undefined;
 
-    res.json({ auth_token: token, token, redirect_url, user_id: userId });
+    res.json({
+      auth_token: token,
+      token,
+      expires_at: handoffExpiry(token),
+      token_type: "sso_handoff_jwt",
+      redirect_url,
+      user_id: userId,
+    });
   } catch (error) {
     console.error("SSO generate-token error:", error.message);
     res.status(500).json({ error: "Internal server error" });

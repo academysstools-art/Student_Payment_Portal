@@ -4,6 +4,7 @@ const {
   issueSession,
   toStudentPayload,
 } = require("./authController");
+const { saveAuthToken, consumeAuthToken } = require("../config/postgres");
 
 function firstNonEmpty(...values) {
   for (const value of values) {
@@ -100,6 +101,17 @@ async function generateToken(req, res) {
     const student = await findEligibleStudent(userId);
     const tokenUserId = student?.user_id || userId;
     const token = signHandoffToken(tokenUserId);
+    const expiresAt = handoffExpiry(token);
+
+    try {
+      await saveAuthToken({ token, userId: tokenUserId, expiresAt });
+    } catch (dbError) {
+      console.error("[SSO] Failed to store auth token in Postgres:", dbError.message);
+      return res.status(500).json({
+        error: "Internal server error",
+        message: "Failed to store authentication token",
+      });
+    }
 
     const frontendUrl = (
       process.env.FRONTEND_URL || "https://fee-details.nxtwave.academy"
@@ -109,7 +121,7 @@ async function generateToken(req, res) {
     return res.json({
       auth_token: token,
       token,
-      expires_at: handoffExpiry(token),
+      expires_at: expiresAt,
       token_type: "sso_handoff_jwt",
       redirect_url,
       user_id: tokenUserId,
@@ -128,18 +140,28 @@ async function validateToken(req, res) {
       return res.status(400).json({ error: "Token is required" });
     }
 
-    let decoded;
+    let userId = null;
     try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (err) {
-      return res.status(401).json({ error: "Invalid or expired token" });
+      const stored = await consumeAuthToken(token);
+      if (stored) userId = stored.user_id;
+    } catch (dbError) {
+      console.error("[SSO] Postgres token lookup failed:", dbError.message);
     }
 
-    if (decoded.type !== "sso_handoff") {
-      return res.status(401).json({ error: "Invalid token type" });
+    if (!userId) {
+      let decoded;
+      try {
+        decoded = jwt.verify(token, process.env.JWT_SECRET);
+      } catch (err) {
+        return res.status(401).json({ error: "Invalid or expired token" });
+      }
+      if (decoded.type !== "sso_handoff") {
+        return res.status(401).json({ error: "Invalid token type" });
+      }
+      userId = decoded.userId;
     }
 
-    const student = await findEligibleStudent(decoded.userId);
+    const student = await findEligibleStudent(userId);
     if (!student) {
       return res.status(404).json({ error: "Student not found" });
     }
@@ -173,8 +195,18 @@ async function ssoCallback(req, res) {
 
     const student = await findEligibleStudent(userId);
     const tokenUserId = student?.user_id || userId;
+    const token = signHandoffToken(tokenUserId);
+    try {
+      await saveAuthToken({
+        token,
+        userId: tokenUserId,
+        expiresAt: handoffExpiry(token),
+      });
+    } catch (dbError) {
+      console.error("[SSO] Failed to store callback token:", dbError.message);
+    }
     res.redirect(
-      `${frontendUrl}/sso?token=${encodeURIComponent(signHandoffToken(tokenUserId))}`
+      `${frontendUrl}/sso?token=${encodeURIComponent(token)}`
     );
   } catch (error) {
     console.error("SSO callback error:", error.message);

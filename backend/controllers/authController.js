@@ -22,15 +22,14 @@ function toStudentPayload(student) {
   };
 }
 
-// A student may enter the portal only if they are on the pilot whitelist
-// and have fee details available.
+// Forms already authenticated this user. Load payment data if fee details exist.
 async function findEligibleStudent(userId) {
-  const [allowed, feeDetails] = await Promise.all([
-    isUserAllowed(userId),
-    getUserFeeDetails(userId),
-  ]);
-  if (!allowed || !feeDetails) return null;
-  return feeDetails;
+  const feeDetails = await getUserFeeDetails(userId);
+  if (feeDetails) return feeDetails;
+
+  const allowed = await isUserAllowed(userId);
+  if (!allowed) return null;
+  return { user_id: userId.trim(), first_name: "", program_name: "", product_code: "" };
 }
 
 async function loginWithUserId(req, res) {

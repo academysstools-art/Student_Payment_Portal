@@ -21,7 +21,11 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     const url = error.config?.url || "";
-    const isAuthEndpoint = url.includes("/auth/login") || url.includes("/admin/login") || url.includes("/sso/");
+    const isAuthEndpoint =
+      url.includes("/auth/login") ||
+      url.includes("/auth/generate-auth-code") ||
+      url.includes("/admin/login") ||
+      url.includes("/sso/");
     if (!isAuthEndpoint && (error.response?.status === 401 || error.response?.status === 403)) {
       localStorage.removeItem("token");
       localStorage.removeItem("student");

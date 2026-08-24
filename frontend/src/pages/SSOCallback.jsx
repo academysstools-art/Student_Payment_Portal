@@ -24,7 +24,10 @@ export default function SSOCallback() {
       return;
     }
 
-    const authToken = searchParams.get("token") || searchParams.get("auth_token");
+    const authToken =
+      searchParams.get("token") ||
+      searchParams.get("auth_token") ||
+      searchParams.get("authToken");
 
     if (!authToken) {
       setError("No authentication token found. Please try logging in again.");

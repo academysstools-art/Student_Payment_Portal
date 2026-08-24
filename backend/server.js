@@ -28,7 +28,13 @@ app.use(
         allowed.push(process.env.FRONTEND_URL.replace(/\/+$/, ""));
       }
 
-      if (allowed.includes(origin) || origin.endsWith(".vercel.app")) {
+      if (
+        allowed.includes(origin) ||
+        origin.endsWith(".vercel.app") ||
+        origin.endsWith(".replit.app") ||
+        origin.endsWith(".nxtwave.academy") ||
+        origin.endsWith(".ccbp.in")
+      ) {
         return callback(null, true);
       }
 

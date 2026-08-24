@@ -90,19 +90,21 @@ async function generateToken(req, res) {
     if (!userId) {
       return res.status(400).json({
         error: "User ID is required",
-        message: "user_id or phone is required",
-        hint: "Send JSON with user_id, userId, or phone / mobile / phone_number",
+        message: "user_id is required",
+        hint: "Send JSON with user_id or userId",
       });
     }
+
+    console.log("[SSO] generate-auth-code body keys:", Object.keys(req.body || {}));
 
     const student = await findEligibleStudent(userId);
     const tokenUserId = student?.user_id || userId;
     const token = signHandoffToken(tokenUserId);
 
-    const frontendUrl = (process.env.FRONTEND_URL || "").replace(/\/+$/, "");
-    const redirect_url = frontendUrl
-      ? `${frontendUrl}/sso?token=${token}`
-      : undefined;
+    const frontendUrl = (
+      process.env.FRONTEND_URL || "https://fee-details.nxtwave.academy"
+    ).replace(/\/+$/, "");
+    const redirect_url = `${frontendUrl}/sso?token=${encodeURIComponent(token)}`;
 
     return res.json({
       auth_token: token,
@@ -154,33 +156,29 @@ async function validateToken(req, res) {
 
 // Browser redirect callback — SSO system redirects here with user_id in query
 async function ssoCallback(req, res) {
-  const frontendUrl = (process.env.FRONTEND_URL || "").replace(/\/+$/, "");
+  const frontendUrl = (
+    process.env.FRONTEND_URL || "https://fee-details.nxtwave.academy"
+  ).replace(/\/+$/, "");
 
   try {
-    const userId = (
-      req.query.user_id || req.query.userId || req.query.uid || ""
-    ).trim();
-
-    if (!frontendUrl) {
-      return res.status(500).send("FRONTEND_URL not configured");
-    }
+    const userId = firstNonEmpty(
+      req.query.user_id,
+      req.query.userId,
+      req.query.uid
+    );
 
     if (!userId) {
       return res.redirect(`${frontendUrl}/sso?error=missing_user_id`);
     }
 
     const student = await findEligibleStudent(userId);
-    if (!student) {
-      return res.redirect(`${frontendUrl}/sso?error=student_not_found`);
-    }
-
-    res.redirect(`${frontendUrl}/sso?token=${signHandoffToken(student.user_id)}`);
+    const tokenUserId = student?.user_id || userId;
+    res.redirect(
+      `${frontendUrl}/sso?token=${encodeURIComponent(signHandoffToken(tokenUserId))}`
+    );
   } catch (error) {
     console.error("SSO callback error:", error.message);
-    if (frontendUrl) {
-      return res.redirect(`${frontendUrl}/sso?error=server_error`);
-    }
-    res.status(500).send("SSO callback failed");
+    return res.redirect(`${frontendUrl}/sso?error=server_error`);
   }
 }
 

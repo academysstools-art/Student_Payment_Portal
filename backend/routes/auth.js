@@ -8,5 +8,6 @@ router.post("/login", loginWithUserId);
 
 // POST /api/auth/generate-auth-code — server-to-server SSO token (Forms backend)
 router.post("/generate-auth-code", generateToken);
+router.post("/generate-auth-code-with-redirect", generateToken);
 
 module.exports = router;

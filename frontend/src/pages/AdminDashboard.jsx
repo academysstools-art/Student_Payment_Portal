@@ -1,16 +1,21 @@
 import { useState, useEffect } from "react";
 import AdminNavbar from "../components/AdminNavbar";
-import StudentPortalPreview from "../components/StudentPortalPreview";
 import { adminAPI } from "../services/api";
 import {
   BarChart3, Search, MessageSquare, Download,
-  Loader2, Users, Activity, Clock, ChevronRight, X, Eye,
+  Loader2, Users, Activity, Clock, Eye,
 } from "lucide-react";
 
 const fmtMoney = (v) => {
   const n = parseFloat(v);
   return isNaN(n) ? v || "--" : `₹${n.toLocaleString("en-IN")}`;
 };
+
+function openStudentPreviewTab(userId) {
+  if (!userId) return;
+  const url = `/admin/preview/${encodeURIComponent(userId)}`;
+  window.open(url, "_blank", "noopener,noreferrer");
+}
 
 const TABS = [
   { id: "analytics", label: "Analytics", icon: BarChart3 },
@@ -56,9 +61,6 @@ export default function AdminDashboard() {
 function AnalyticsTab() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [preview, setPreview] = useState(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewError, setPreviewError] = useState("");
 
   useEffect(() => {
     adminAPI.getAnalytics().then((res) => {
@@ -66,40 +68,6 @@ function AnalyticsTab() {
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
-
-  async function openPreview(userId, meta = {}) {
-    if (!userId) return;
-    setPreviewLoading(true);
-    setPreviewError("");
-    setPreview({
-      userId,
-      name: meta.name || "",
-      programme: meta.programme || "",
-      loading: true,
-    });
-    try {
-      const res = await adminAPI.getStudentDetails(userId);
-      setPreview(res.data);
-    } catch (err) {
-      const status = err.response?.status;
-      const message =
-        err.response?.data?.error || "Unable to load student preview";
-      if (status === 404) {
-        setPreview({
-          userId,
-          name: meta.name || "",
-          programme: meta.programme || "",
-          missingFeeData: true,
-        });
-        setPreviewError("");
-      } else {
-        setPreview(null);
-        setPreviewError(message);
-      }
-    } finally {
-      setPreviewLoading(false);
-    }
-  }
 
   if (loading) return <Spinner />;
   if (!data) return <Empty text="Failed to load analytics" />;
@@ -192,12 +160,7 @@ function AnalyticsTab() {
                     <td className="px-4 py-2 text-right">
                       <button
                         type="button"
-                        onClick={() =>
-                          openPreview(log.userId, {
-                            name: log.name,
-                            programme: log.programme,
-                          })
-                        }
+                        onClick={() => openStudentPreviewTab(log.userId)}
                         className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-blue-900 hover:text-blue-700 cursor-pointer"
                       >
                         <Eye size={13} />
@@ -211,57 +174,6 @@ function AnalyticsTab() {
           </div>
         )}
       </div>
-
-      {previewError && (
-        <StudentPreviewModal
-          onClose={() => setPreviewError("")}
-          title="Preview unavailable"
-        >
-          <p className="text-sm font-semibold text-amber-950">{previewError}</p>
-        </StudentPreviewModal>
-      )}
-      {(preview || previewLoading) && !previewError && (
-        <StudentPreviewModal
-          wide
-          flush={!previewLoading && !preview?.missingFeeData && !!preview?.portal}
-          onClose={() => {
-            setPreview(null);
-            setPreviewLoading(false);
-          }}
-          title={
-            previewLoading || preview?.loading
-              ? "Loading student portal…"
-              : preview?.missingFeeData
-                ? "Not in fee dataset"
-                : `Portal preview · ${preview?.name || "Student"}`
-          }
-          subtitle={preview?.userId}
-        >
-          {previewLoading || preview?.loading ? (
-            <div className="flex justify-center py-10">
-              <Loader2 className="w-6 h-6 text-blue-900 animate-spin" />
-            </div>
-          ) : preview?.missingFeeData ? (
-            <div className="space-y-3 p-4">
-              <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-sm font-semibold text-amber-950 leading-relaxed">
-                This student logged in, but they are not in the BigQuery fee
-                details dataset yet — so payment preview is unavailable.
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <DetailItem label="User ID" value={preview.userId} />
-                <DetailItem label="Name" value={preview.name || "—"} />
-                <DetailItem label="Programme" value={preview.programme || "—"} />
-              </div>
-            </div>
-          ) : preview?.portal ? (
-            <StudentPortalPreview portal={preview.portal} />
-          ) : (
-            <div className="p-4 text-sm text-slate-500">
-              Portal preview data unavailable for this student.
-            </div>
-          )}
-        </StudentPreviewModal>
-      )}
     </div>
   );
 }
@@ -271,14 +183,11 @@ function StudentsTab() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [selected, setSelected] = useState(null);
-  const [detailLoading, setDetailLoading] = useState(false);
 
   async function handleSearch(e) {
     e.preventDefault();
     if (!query.trim()) return;
     setLoading(true);
-    setSelected(null);
     try {
       const res = await adminAPI.searchStudents(query.trim());
       setResults(res.data);
@@ -286,32 +195,6 @@ function StudentsTab() {
       setResults([]);
     }
     setLoading(false);
-  }
-
-  async function viewDetails(userId, meta = {}) {
-    setDetailLoading(true);
-    setSelected({
-      userId,
-      name: meta.name || "",
-      programme: meta.programme || "",
-      loading: true,
-    });
-    try {
-      const res = await adminAPI.getStudentDetails(userId);
-      setSelected(res.data);
-    } catch (err) {
-      if (err.response?.status === 404) {
-        setSelected({
-          userId,
-          name: meta.name || "",
-          programme: meta.programme || "",
-          missingFeeData: true,
-        });
-      } else {
-        setSelected(null);
-      }
-    }
-    setDetailLoading(false);
   }
 
   return (
@@ -333,8 +216,7 @@ function StudentsTab() {
         </button>
       </form>
 
-      {/* Results */}
-      {results.length > 0 && !selected && (
+      {results.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -344,7 +226,7 @@ function StudentsTab() {
                   <th className="px-4 py-2">Name</th>
                   <th className="px-4 py-2">Programme</th>
                   <th className="px-4 py-2">Remaining</th>
-                  <th className="px-4 py-2"></th>
+                  <th className="px-4 py-2 text-right">Preview</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -354,17 +236,14 @@ function StudentsTab() {
                     <td className="px-4 py-2.5 text-xs font-bold text-slate-700">{s.name || "--"}</td>
                     <td className="px-4 py-2.5 text-xs text-slate-600">{s.programme}</td>
                     <td className="px-4 py-2.5 text-xs font-black text-slate-900">{fmtMoney(s.remainingAmountToPay)}</td>
-                    <td className="px-4 py-2.5">
+                    <td className="px-4 py-2.5 text-right">
                       <button
-                        onClick={() =>
-                          viewDetails(s.userId, {
-                            name: s.name,
-                            programme: s.programme,
-                          })
-                        }
-                        className="text-blue-900 hover:text-blue-700 cursor-pointer"
+                        type="button"
+                        onClick={() => openStudentPreviewTab(s.userId)}
+                        className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-blue-900 hover:text-blue-700 cursor-pointer"
                       >
-                        <ChevronRight size={14} />
+                        <Eye size={13} />
+                        Open
                       </button>
                     </td>
                   </tr>
@@ -373,42 +252,6 @@ function StudentsTab() {
             </table>
           </div>
         </div>
-      )}
-
-      {/* Detail View */}
-      {selected && (
-        <StudentPreviewModal
-          wide
-          flush={!detailLoading && !selected.loading && !selected.missingFeeData && !!selected.portal}
-          onClose={() => {
-            setSelected(null);
-            setDetailLoading(false);
-          }}
-          title={
-            detailLoading || selected.loading
-              ? "Loading student portal…"
-              : selected.missingFeeData
-                ? "Not in fee dataset"
-                : `Portal preview · ${selected.name || "Student"}`
-          }
-          subtitle={selected.userId}
-        >
-          {detailLoading || selected.loading ? (
-            <div className="flex justify-center py-10">
-              <Loader2 className="w-6 h-6 text-blue-900 animate-spin" />
-            </div>
-          ) : selected.missingFeeData ? (
-            <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl text-sm font-semibold text-amber-950">
-              Student not found in fee details dataset.
-            </div>
-          ) : selected.portal ? (
-            <StudentPortalPreview portal={selected.portal} />
-          ) : (
-            <div className="p-4 text-sm text-slate-500">
-              Portal preview data unavailable for this student.
-            </div>
-          )}
-        </StudentPreviewModal>
       )}
 
       {results.length === 0 && query && !loading && (
@@ -548,62 +391,6 @@ function ExportTab() {
 }
 
 /* ─── Shared Components ─── */
-function StudentPreviewModal({ title, subtitle, onClose, children, wide, flush }) {
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [onClose]);
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60"
-      onClick={onClose}
-      role="presentation"
-    >
-      <div
-        className={`bg-white rounded-2xl border border-slate-200 w-full overflow-hidden flex flex-col ${
-          wide ? "max-w-6xl max-h-[94vh]" : "max-w-3xl max-h-[85vh]"
-        }`}
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-      >
-        <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center gap-3 shrink-0">
-          <div className="min-w-0">
-            <h3 className="font-black text-sm text-slate-800 truncate">{title}</h3>
-            {subtitle ? (
-              <p className="text-[10px] font-bold text-blue-900 mt-0.5 truncate">
-                {subtitle}
-              </p>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="shrink-0 text-slate-400 hover:text-slate-600 cursor-pointer"
-            aria-label="Close preview"
-          >
-            <X size={16} />
-          </button>
-        </div>
-        <div
-          className={`overflow-y-auto flex-1 min-h-0 ${flush ? "p-0" : "p-4"}`}
-        >
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function StatCard({ icon: Icon, label, value, color }) {
   const colors = {
     blue: "bg-blue-50 text-blue-900",
@@ -619,17 +406,6 @@ function StatCard({ icon: Icon, label, value, color }) {
         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{label}</span>
       </div>
       <p className="text-lg font-black text-slate-900">{value}</p>
-    </div>
-  );
-}
-
-function DetailItem({ label, value, highlight }) {
-  return (
-    <div>
-      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{label}</p>
-      <p className={`text-xs font-bold ${highlight ? "text-rose-600" : "text-slate-800"}`}>
-        {value || "--"}
-      </p>
     </div>
   );
 }

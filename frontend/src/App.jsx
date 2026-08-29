@@ -11,6 +11,7 @@ import Login from "./pages/Login";
 import AdminLogin from "./pages/AdminLogin";
 import Payments from "./pages/Payments";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminStudentPreview from "./pages/AdminStudentPreview";
 import SSOCallback from "./pages/SSOCallback";
 
 const SSO_RESPONSE_KEYS = [
@@ -74,6 +75,14 @@ export default function App() {
             element={
               <AdminRoute>
                 <AdminDashboard />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/preview/:userId"
+            element={
+              <AdminRoute>
+                <AdminStudentPreview />
               </AdminRoute>
             }
           />

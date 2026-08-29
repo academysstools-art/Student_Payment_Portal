@@ -87,7 +87,7 @@ export default function StudentPortalPreview({ portal }) {
     : "?";
 
   return (
-    <div className="bg-[#f5f6fa] flex h-full min-h-[640px] rounded-b-2xl overflow-hidden relative">
+    <div className="bg-[#f5f6fa] flex h-full min-h-[calc(100vh-56px)] overflow-hidden relative">
       <aside className="hidden md:flex w-[220px] shrink-0 bg-white border-r border-slate-200 flex-col">
         <div className="px-5 py-5 border-b border-slate-100">
           <div className="flex items-center gap-2.5">

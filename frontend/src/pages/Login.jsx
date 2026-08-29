@@ -50,19 +50,14 @@ export default function Login() {
         </div>
 
         {!DIRECT_LOGIN_ENABLED && (
-          <div className="space-y-4">
-            <div className="bg-blue-50 text-blue-900 px-4 py-3 rounded-xl text-sm font-bold border border-blue-100 text-center">
-              Please open this payment portal through your NxtWave account.
-            </div>
-            <div className="text-center">
-              <a
-                href={SSO_LOGIN_URL}
-                className="inline-flex items-center justify-center gap-2 bg-blue-900 hover:bg-blue-800 text-white text-sm font-bold no-underline px-5 py-2.5 rounded-xl transition-colors"
-              >
-                <ExternalLink size={14} />
-                Login with NxtWave Account
-              </a>
-            </div>
+          <div className="text-center">
+            <a
+              href={SSO_LOGIN_URL}
+              className="inline-flex items-center justify-center gap-2 bg-blue-900 hover:bg-blue-800 text-white text-sm font-bold no-underline px-5 py-2.5 rounded-xl transition-colors"
+            >
+              <ExternalLink size={14} />
+              Login with NxtWave Account
+            </a>
           </div>
         )}
 

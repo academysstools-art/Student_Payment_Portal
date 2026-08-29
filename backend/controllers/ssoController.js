@@ -227,7 +227,8 @@ async function validateToken(req, res) {
       return res.status(404).json({
         error: "Student not found",
         code: "USER_NOT_IN_DATASET",
-        message: "You are not in our dataset yet. We will update soon.",
+        message:
+          "The fee details portal is currently in a pilot phase, but we'll notify you as soon as it's ready for you — thank you for your patience!",
       });
     }
 

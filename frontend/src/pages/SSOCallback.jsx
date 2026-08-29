@@ -158,11 +158,9 @@ export default function SSOCallback() {
       <PortalShell>
         <div className="space-y-4">
           <div className="bg-amber-50 text-amber-950 px-4 py-4 rounded-xl text-sm font-semibold border border-amber-100 text-center leading-relaxed">
-            You are not in our dataset yet.
-            <br />
-            <span className="font-medium text-amber-800/90">
-              We will update soon.
-            </span>
+            The fee details portal is currently in a pilot phase, but we&apos;ll
+            notify you as soon as it&apos;s ready for you — thank you for your
+            patience!
           </div>
           <div className="text-center">
             <a

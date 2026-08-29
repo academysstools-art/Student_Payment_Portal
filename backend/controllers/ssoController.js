@@ -6,6 +6,9 @@ const {
 } = require("./authController");
 const { saveAuthToken, consumeAuthToken } = require("../config/postgres");
 
+const DEFAULT_FRONTEND_URL = "https://fee-details.nxtwave.academy";
+const HANDOFF_TTL_SECONDS = 5 * 60;
+
 function firstNonEmpty(...values) {
   for (const value of values) {
     if (value == null) continue;
@@ -15,7 +18,11 @@ function firstNonEmpty(...values) {
   return null;
 }
 
-// Forms may send user_id, nested user objects, or phone after OTP.
+function frontendOrigin() {
+  return (process.env.FRONTEND_URL || DEFAULT_FRONTEND_URL).replace(/\/+$/, "");
+}
+
+// Forms sends the authenticated student's user_id after phone/OTP login.
 function resolveUserIdFromFormsBody(body = {}) {
   const nested = body.user || body.data || body.payload || {};
   return firstNonEmpty(
@@ -26,13 +33,7 @@ function resolveUserIdFromFormsBody(body = {}) {
     nested.user_id,
     nested.userId,
     nested.uid,
-    nested.id,
-    body.phone,
-    body.mobile,
-    body.phone_number,
-    body.mobile_number,
-    nested.phone,
-    nested.mobile
+    nested.id
   );
 }
 
@@ -54,8 +55,6 @@ function readClientAuthKey(req) {
   );
 }
 
-const HANDOFF_TTL_SECONDS = 5 * 60;
-
 function signHandoffToken(userId) {
   return jwt.sign(
     { userId, type: "sso_handoff" },
@@ -64,18 +63,16 @@ function signHandoffToken(userId) {
   );
 }
 
-// The caller reads expires_at to know when to stop reusing the token, so derive
-// it from the signed exp claim rather than re-deriving the clock.
 function handoffExpiry(token) {
   const { exp } = jwt.decode(token) || {};
   const seconds = exp || Math.floor(Date.now() / 1000) + HANDOFF_TTL_SECONDS;
   return new Date(seconds * 1000).toISOString();
 }
 
-// Called BY Forms backend (server-to-server).
-// Mint a handoff token from whatever identifier Forms already authenticated
-// (usually user_id after phone OTP). Do not block token issue on BigQuery
-// whitelist here — Forms treats 4xx as CLIENT_BACKEND_TOKEN_FETCH_FAILED.
+/**
+ * Step 2 — Forms calls this after SSO login with { user_id }.
+ * We mint a short-lived token, store token→user_id in Neon, return redirect_url.
+ */
 async function generateToken(req, res) {
   try {
     const authKey = readClientAuthKey(req);
@@ -96,8 +93,7 @@ async function generateToken(req, res) {
       });
     }
 
-    console.log("[SSO] generate-auth-code body keys:", Object.keys(req.body || {}));
-
+    // Prefer the canonical BigQuery user_id when the student exists.
     const student = await findEligibleStudent(userId);
     const tokenUserId = student?.user_id || userId;
     const token = signHandoffToken(tokenUserId);
@@ -113,10 +109,7 @@ async function generateToken(req, res) {
       });
     }
 
-    const frontendUrl = (
-      process.env.FRONTEND_URL || "https://fee-details.nxtwave.academy"
-    ).replace(/\/+$/, "");
-    const redirect_url = `${frontendUrl}/sso?token=${encodeURIComponent(token)}`;
+    const redirect_url = `${frontendOrigin()}/sso?token=${encodeURIComponent(token)}`;
 
     return res.json({
       auth_token: token,
@@ -132,7 +125,10 @@ async function generateToken(req, res) {
   }
 }
 
-// Called by our frontend to exchange short-lived token for session JWT
+/**
+ * Steps 3–5 — Frontend /sso exchanges the handoff token:
+ * Neon lookup → user_id → BigQuery student → 24h session JWT.
+ */
 async function validateToken(req, res) {
   try {
     const { token } = req.body;
@@ -143,10 +139,10 @@ async function validateToken(req, res) {
     let decoded;
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (err) {
+    } catch {
       return res.status(401).json({ error: "Invalid or expired token" });
     }
-    if (decoded.type !== "sso_handoff") {
+    if (decoded.type !== "sso_handoff" || !decoded.userId) {
       return res.status(401).json({ error: "Invalid token type" });
     }
 
@@ -160,13 +156,19 @@ async function validateToken(req, res) {
         message: "Unable to validate the one-time token",
       });
     }
+
     if (!stored || stored.user_id !== decoded.userId) {
-      return res.status(401).json({ error: "Invalid, expired, or already used token" });
+      return res.status(401).json({
+        error: "Invalid, expired, or already used token",
+      });
     }
 
-    const student = await findEligibleStudent(decoded.userId);
+    const student = await findEligibleStudent(stored.user_id);
     if (!student) {
-      return res.status(404).json({ error: "Student not found" });
+      return res.status(404).json({
+        error: "Student not found",
+        message: "No payment data found for this user ID",
+      });
     }
 
     res.json({
@@ -179,12 +181,9 @@ async function validateToken(req, res) {
   }
 }
 
-// Compatibility redirect: only forwards an already-issued handoff token.
-// A user_id by itself must never mint a token from a public browser request.
+// Compatibility: only forward an already-issued handoff token to the SPA.
 async function ssoCallback(req, res) {
-  const frontendUrl = (
-    process.env.FRONTEND_URL || "https://fee-details.nxtwave.academy"
-  ).replace(/\/+$/, "");
+  const frontendUrl = frontendOrigin();
 
   try {
     const token = firstNonEmpty(
@@ -206,9 +205,7 @@ async function ssoCallback(req, res) {
       return res.redirect(`${frontendUrl}/sso?error=invalid_token`);
     }
 
-    res.redirect(
-      `${frontendUrl}/sso?token=${encodeURIComponent(token)}`
-    );
+    res.redirect(`${frontendUrl}/sso?token=${encodeURIComponent(token)}`);
   } catch (error) {
     console.error("SSO callback error:", error.message);
     return res.redirect(`${frontendUrl}/sso?error=server_error`);

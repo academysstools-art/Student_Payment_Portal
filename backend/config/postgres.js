@@ -20,12 +20,19 @@ function getPool() {
 
 async function ensureAuthTokenTable() {
   if (schemaReady) return;
-  const { rows } = await getPool().query(
-    "SELECT to_regclass('public.auth_tokens') AS table_name"
+  const client = getPool();
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS auth_tokens (
+      token TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await client.query(
+    `CREATE INDEX IF NOT EXISTS auth_tokens_user_id_idx ON auth_tokens (user_id)`
   );
-  if (!rows[0]?.table_name) {
-    throw new Error("auth_tokens table is not provisioned");
-  }
   schemaReady = true;
 }
 
@@ -34,7 +41,10 @@ async function saveAuthToken({ token, userId, expiresAt }) {
   await getPool().query(
     `INSERT INTO auth_tokens (token, user_id, expires_at, used)
      VALUES ($1, $2, $3, FALSE)
-     ON CONFLICT (token) DO UPDATE SET user_id = EXCLUDED.user_id, expires_at = EXCLUDED.expires_at, used = FALSE`,
+     ON CONFLICT (token) DO UPDATE SET
+       user_id = EXCLUDED.user_id,
+       expires_at = EXCLUDED.expires_at,
+       used = FALSE`,
     [token, userId, expiresAt]
   );
 }

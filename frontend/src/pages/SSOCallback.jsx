@@ -2,7 +2,11 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ssoAPI } from "../services/api";
-import { Loader2 } from "lucide-react";
+import { ExternalLink, Loader2 } from "lucide-react";
+
+const SSO_LOGIN_URL =
+  import.meta.env.VITE_SSO_LOGIN_URL ||
+  "https://meetings.ccbp.in/mid/fee-details";
 
 const SSO_ERROR_MESSAGES = {
   missing_user_id: "User ID was not provided by the SSO system. Please try again.",
@@ -31,32 +35,31 @@ export default function SSOCallback() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check for error from backend redirect
-    if (errorParam) {
-      return;
-    }
+    if (errorParam || !authToken) return;
 
-    if (!authToken) {
-      return;
-    }
+    let cancelled = false;
 
     async function validateAndLogin() {
       try {
         const response = await ssoAPI.validateToken(authToken);
+        if (cancelled) return;
         login(response.data.token, response.data.student);
         navigate("/payments", { replace: true });
       } catch (err) {
+        if (cancelled) return;
         setError(
           err.response?.data?.error ||
+            err.response?.data?.message ||
             "Authentication failed. The link may have expired. Please try again."
         );
       }
     }
 
     validateAndLogin();
+    return () => {
+      cancelled = true;
+    };
   }, [authToken, errorParam, login, navigate]);
-
-  const ssoLoginUrl = import.meta.env.VITE_SSO_LOGIN_URL;
 
   if (error) {
     return (
@@ -65,14 +68,13 @@ export default function SSOCallback() {
           <div className="bg-rose-50 text-rose-600 px-4 py-3 rounded-xl text-sm font-bold border border-rose-100 mb-4">
             {error}
           </div>
-          {ssoLoginUrl && (
-            <a
-              href={ssoLoginUrl}
-              className="inline-block mt-2 text-blue-900 font-bold text-sm hover:underline"
-            >
-              Go to SSO Login
-            </a>
-          )}
+          <a
+            href={SSO_LOGIN_URL}
+            className="inline-flex items-center gap-1.5 text-blue-900 hover:text-blue-700 text-sm font-bold no-underline border border-blue-200 hover:border-blue-400 bg-white px-4 py-2 rounded-lg transition-colors"
+          >
+            <ExternalLink size={14} />
+            Login with NxtWave Account
+          </a>
         </div>
       </div>
     );
@@ -84,6 +86,9 @@ export default function SSOCallback() {
         <Loader2 className="w-10 h-10 animate-spin mx-auto mb-3" />
         <p className="font-bold text-sm tracking-tighter uppercase">
           Verifying your identity...
+        </p>
+        <p className="mt-2 text-xs text-white/80 font-medium">
+          Validating SSO token and loading payment details
         </p>
       </div>
     </div>

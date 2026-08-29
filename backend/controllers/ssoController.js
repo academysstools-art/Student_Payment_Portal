@@ -199,24 +199,58 @@ async function validateToken(req, res) {
       return res.status(401).json({ error: "Invalid token type" });
     }
 
+    let peeked;
+    try {
+      peeked = await peekAuthToken(token);
+    } catch (dbError) {
+      console.error("[SSO] Postgres token lookup failed:", dbError.message);
+      return res.status(503).json({
+        error: "Authentication service unavailable",
+        message: "Unable to validate the one-time token",
+      });
+    }
+
+    if (
+      !peeked ||
+      peeked.user_id !== decoded.userId ||
+      new Date(peeked.expires_at).getTime() <= Date.now()
+    ) {
+      return res.status(401).json({
+        error: "Invalid, expired, or already used token",
+      });
+    }
+
+    // Token is valid — check fee dataset before consuming so missing students
+    // can refresh and still see the "not in dataset" message.
+    const student = await findEligibleStudent(peeked.user_id);
+    if (!student) {
+      return res.status(404).json({
+        error: "Student not found",
+        code: "USER_NOT_IN_DATASET",
+        message: "You are not in our dataset yet. We will update soon.",
+      });
+    }
+
     let stored;
     try {
       stored = await consumeAuthToken(token);
-      // Concurrent remount (React StrictMode) may race the first consume.
+      // Concurrent remount may race the first consume.
       // If the token was just used for the same user_id, allow this request.
-      if (!stored) {
-        const peeked = await peekAuthToken(token);
+      if (!stored && peeked.used === true) {
+        stored = { user_id: peeked.user_id, expires_at: peeked.expires_at };
+      } else if (!stored) {
+        const again = await peekAuthToken(token);
         if (
-          peeked &&
-          peeked.used === true &&
-          peeked.user_id === decoded.userId &&
-          new Date(peeked.expires_at).getTime() > Date.now()
+          again &&
+          again.used === true &&
+          again.user_id === decoded.userId &&
+          new Date(again.expires_at).getTime() > Date.now()
         ) {
-          stored = { user_id: peeked.user_id, expires_at: peeked.expires_at };
+          stored = { user_id: again.user_id, expires_at: again.expires_at };
         }
       }
     } catch (dbError) {
-      console.error("[SSO] Postgres token lookup failed:", dbError.message);
+      console.error("[SSO] Postgres token consume failed:", dbError.message);
       return res.status(503).json({
         error: "Authentication service unavailable",
         message: "Unable to validate the one-time token",
@@ -226,14 +260,6 @@ async function validateToken(req, res) {
     if (!stored || stored.user_id !== decoded.userId) {
       return res.status(401).json({
         error: "Invalid, expired, or already used token",
-      });
-    }
-
-    const student = await findEligibleStudent(stored.user_id);
-    if (!student) {
-      return res.status(404).json({
-        error: "Student not found",
-        message: "No payment data found for this user ID",
       });
     }
 

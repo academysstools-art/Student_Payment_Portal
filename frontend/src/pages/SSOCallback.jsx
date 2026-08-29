@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ssoAPI } from "../services/api";
-import { Loader2 } from "lucide-react";
+import { ExternalLink, Loader2, TrendingUp } from "lucide-react";
+
+const SSO_LOGIN_URL = "/api/sso/login";
 
 const TOKEN_PARAM_KEYS = [
   "token",
@@ -78,8 +80,28 @@ function exchangeTokenOnce(token) {
 }
 
 function goToSsoGate(navigate) {
-  // Clear token/error query so / shows only the standard NxtWave gate message.
   navigate({ pathname: "/", search: "", hash: "" }, { replace: true });
+}
+
+function PortalShell({ children }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-500 via-purple-500 to-blue-700 px-5">
+      <div className="bg-white rounded-[2rem] shadow-2xl p-10 w-full max-w-md">
+        <div className="text-center mb-6">
+          <div className="bg-blue-900 text-white p-3 rounded-xl inline-block mb-4">
+            <TrendingUp size={28} />
+          </div>
+          <h1 className="text-3xl font-black tracking-tighter text-slate-900 mb-1">
+            NxtWave
+          </h1>
+          <p className="text-slate-400 font-bold text-sm uppercase tracking-widest">
+            Student Payment Portal
+          </p>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
 }
 
 export default function SSOCallback() {
@@ -89,9 +111,9 @@ export default function SSOCallback() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const [checking, setChecking] = useState(() => Boolean(authToken) && !errorParam);
+  const [notInDataset, setNotInDataset] = useState(false);
 
   useEffect(() => {
-    // No token, bad redirect, or SSO error → show only the defined gate on /
     if (errorParam || !authToken) {
       goToSsoGate(navigate);
       return;
@@ -104,17 +126,21 @@ export default function SSOCallback() {
         const response = await exchangeTokenOnce(authToken);
         if (cancelled) return;
 
-        // User ID missing or not present in BigQuery fee data
         if (!response?.data?.token || !response?.data?.student?.userId) {
-          goToSsoGate(navigate);
+          setNotInDataset(true);
           return;
         }
 
         login(response.data.token, response.data.student);
         navigate("/payments", { replace: true });
-      } catch {
+      } catch (err) {
         if (cancelled) return;
-        // Invalid/expired token, or user_id not in BigQuery
+        const code = err.response?.data?.code;
+        const status = err.response?.status;
+        if (status === 404 || code === "USER_NOT_IN_DATASET") {
+          setNotInDataset(true);
+          return;
+        }
         goToSsoGate(navigate);
       } finally {
         if (!cancelled) setChecking(false);
@@ -126,6 +152,31 @@ export default function SSOCallback() {
       cancelled = true;
     };
   }, [authToken, errorParam, login, navigate]);
+
+  if (notInDataset) {
+    return (
+      <PortalShell>
+        <div className="space-y-4">
+          <div className="bg-amber-50 text-amber-950 px-4 py-4 rounded-xl text-sm font-semibold border border-amber-100 text-center leading-relaxed">
+            You are not in our dataset yet.
+            <br />
+            <span className="font-medium text-amber-800/90">
+              We will update soon.
+            </span>
+          </div>
+          <div className="text-center">
+            <a
+              href={SSO_LOGIN_URL}
+              className="inline-flex items-center justify-center gap-2 bg-blue-900 hover:bg-blue-800 text-white text-sm font-bold no-underline px-5 py-2.5 rounded-xl transition-colors"
+            >
+              <ExternalLink size={14} />
+              Login with NxtWave Account
+            </a>
+          </div>
+        </div>
+      </PortalShell>
+    );
+  }
 
   if (!checking) {
     return null;

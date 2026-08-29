@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import AdminNavbar from "../components/AdminNavbar";
+import StudentPortalPreview from "../components/StudentPortalPreview";
 import { adminAPI } from "../services/api";
 import {
   BarChart3, Search, MessageSquare, Download,
@@ -221,16 +222,18 @@ function AnalyticsTab() {
       )}
       {(preview || previewLoading) && !previewError && (
         <StudentPreviewModal
+          wide
+          flush={!previewLoading && !preview?.missingFeeData && !!preview?.portal}
           onClose={() => {
             setPreview(null);
             setPreviewLoading(false);
           }}
           title={
-            preview?.name
-              ? preview.name
+            previewLoading || preview?.loading
+              ? "Loading student portal…"
               : preview?.missingFeeData
                 ? "Not in fee dataset"
-                : "Student preview"
+                : `Portal preview · ${preview?.name || "Student"}`
           }
           subtitle={preview?.userId}
         >
@@ -239,7 +242,7 @@ function AnalyticsTab() {
               <Loader2 className="w-6 h-6 text-blue-900 animate-spin" />
             </div>
           ) : preview?.missingFeeData ? (
-            <div className="space-y-3">
+            <div className="space-y-3 p-4">
               <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-sm font-semibold text-amber-950 leading-relaxed">
                 This student logged in, but they are not in the BigQuery fee
                 details dataset yet — so payment preview is unavailable.
@@ -250,8 +253,12 @@ function AnalyticsTab() {
                 <DetailItem label="Programme" value={preview.programme || "—"} />
               </div>
             </div>
+          ) : preview?.portal ? (
+            <StudentPortalPreview portal={preview.portal} />
           ) : (
-            <StudentPreviewBody student={preview} />
+            <div className="p-4 text-sm text-slate-500">
+              Portal preview data unavailable for this student.
+            </div>
           )}
         </StudentPreviewModal>
       )}
@@ -371,16 +378,18 @@ function StudentsTab() {
       {/* Detail View */}
       {selected && (
         <StudentPreviewModal
+          wide
+          flush={!detailLoading && !selected.loading && !selected.missingFeeData && !!selected.portal}
           onClose={() => {
             setSelected(null);
             setDetailLoading(false);
           }}
           title={
-            selected.name
-              ? selected.name
+            detailLoading || selected.loading
+              ? "Loading student portal…"
               : selected.missingFeeData
                 ? "Not in fee dataset"
-                : "Student preview"
+                : `Portal preview · ${selected.name || "Student"}`
           }
           subtitle={selected.userId}
         >
@@ -389,11 +398,15 @@ function StudentsTab() {
               <Loader2 className="w-6 h-6 text-blue-900 animate-spin" />
             </div>
           ) : selected.missingFeeData ? (
-            <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-sm font-semibold text-amber-950">
+            <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl text-sm font-semibold text-amber-950">
               Student not found in fee details dataset.
             </div>
+          ) : selected.portal ? (
+            <StudentPortalPreview portal={selected.portal} />
           ) : (
-            <StudentPreviewBody student={selected} />
+            <div className="p-4 text-sm text-slate-500">
+              Portal preview data unavailable for this student.
+            </div>
           )}
         </StudentPreviewModal>
       )}
@@ -535,7 +548,7 @@ function ExportTab() {
 }
 
 /* ─── Shared Components ─── */
-function StudentPreviewModal({ title, subtitle, onClose, children }) {
+function StudentPreviewModal({ title, subtitle, onClose, children, wide, flush }) {
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === "Escape") onClose();
@@ -551,17 +564,19 @@ function StudentPreviewModal({ title, subtitle, onClose, children }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60"
       onClick={onClose}
       role="presentation"
     >
       <div
-        className="bg-white rounded-2xl border border-slate-200 w-full max-w-3xl max-h-[85vh] overflow-hidden shadow-xl"
+        className={`bg-white rounded-2xl border border-slate-200 w-full overflow-hidden flex flex-col ${
+          wide ? "max-w-6xl max-h-[94vh]" : "max-w-3xl max-h-[85vh]"
+        }`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
       >
-        <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center gap-3 sticky top-0">
+        <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center gap-3 shrink-0">
           <div className="min-w-0">
             <h3 className="font-black text-sm text-slate-800 truncate">{title}</h3>
             {subtitle ? (
@@ -579,109 +594,12 @@ function StudentPreviewModal({ title, subtitle, onClose, children }) {
             <X size={16} />
           </button>
         </div>
-        <div className="p-4 overflow-y-auto max-h-[calc(85vh-52px)]">{children}</div>
+        <div
+          className={`overflow-y-auto flex-1 min-h-0 ${flush ? "p-0" : "p-4"}`}
+        >
+          {children}
+        </div>
       </div>
-    </div>
-  );
-}
-
-function StudentPreviewBody({ student }) {
-  const companyLogs = (student.companyLogs || []).filter(
-    (log) => log.paidAmount != null || log.paidDate
-  );
-  const flexLogs = (student.flexLogs || []).filter(
-    (log) => log.paidAmount != null || log.paidDate
-  );
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <DetailItem label="Name" value={student.name} />
-        <DetailItem label="Programme" value={student.programme} />
-        <DetailItem label="Product Code" value={student.productCode} />
-        <DetailItem label="User Type" value={student.userType} />
-        <DetailItem label="Total Fee" value={fmtMoney(student.totalProgrammeFee)} />
-        <DetailItem label="Discount" value={fmtMoney(student.discountApplied)} />
-        <DetailItem label="Net Payable" value={fmtMoney(student.totalFeePayable)} />
-        <DetailItem label="Jodo Flex" value={fmtMoney(student.amountPaidInFlex)} />
-        <DetailItem label="Direct Pay" value={fmtMoney(student.amountPaidToNxtWave)} />
-        <DetailItem label="NBFC Covered" value={fmtMoney(student.nbfcLoanAmountCovered)} />
-        <DetailItem label="Total Covered" value={fmtMoney(student.totalAmountCovered)} />
-        <DetailItem label="Remaining" value={fmtMoney(student.remainingAmountToPay)} highlight />
-      </div>
-
-      {student.nbfcRows?.length > 0 && (
-        <div>
-          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">NBFC Details</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {student.nbfcRows.map((row, i) => (
-              <div key={i} className="bg-slate-50 p-3 rounded-lg">
-                <p className="text-xs font-black text-slate-900">{row.nbfcName}</p>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-[10px] text-slate-500">
-                  <span>Loan: {fmtMoney(row.loanAmount)}</span>
-                  <span>EMI: {fmtMoney(row.emiAmount)}</span>
-                  <span>{row.tenure}</span>
-                  <span className="font-bold">{row.status}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {companyLogs.length > 0 && (
-        <div>
-          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Company Payment Logs</p>
-          <div className="overflow-x-auto bg-slate-50 rounded-lg">
-            <table className="w-full">
-              <thead>
-                <tr className="text-left text-[9px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-200">
-                  <th className="px-3 py-2">Date</th>
-                  <th className="px-3 py-2">Amount</th>
-                  <th className="px-3 py-2">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {companyLogs.map((log, i) => (
-                  <tr key={i}>
-                    <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paidDate || "--"}</td>
-                    <td className="px-3 py-1.5 text-[10px] font-bold text-slate-900">{fmtMoney(log.paidAmount)}</td>
-                    <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paymentStatus || "--"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {flexLogs.length > 0 && (
-        <div>
-          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Flex Payment Logs</p>
-          <div className="overflow-x-auto bg-slate-50 rounded-lg">
-            <table className="w-full">
-              <thead>
-                <tr className="text-left text-[9px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-200">
-                  <th className="px-3 py-2">Date</th>
-                  <th className="px-3 py-2">Amount</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Mode</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {flexLogs.map((log, i) => (
-                  <tr key={i}>
-                    <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paidDate || "--"}</td>
-                    <td className="px-3 py-1.5 text-[10px] font-bold text-slate-900">{fmtMoney(log.paidAmount)}</td>
-                    <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paymentStatus || "--"}</td>
-                    <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paymentMode || "--"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

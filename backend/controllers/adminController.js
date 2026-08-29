@@ -4,6 +4,7 @@ const {
   getApplicationDetails,
   getFlexPaymentLogs,
   getCompanyPaymentLogs,
+  getNbfcSupportMails,
   searchUsers,
   getAllUserFeeDetails,
   getLoginTotals,
@@ -130,22 +131,45 @@ async function searchStudents(req, res) {
   }
 }
 
+function groupNbfcApplications(applications) {
+  const grouped = new Map();
+  for (const row of applications) {
+    const name = (row.nbfc_name || "Unknown").trim();
+    if (!grouped.has(name)) {
+      grouped.set(name, { nbfcName: name, totalLoanAmount: 0, rows: [] });
+    }
+    const group = grouped.get(name);
+    group.totalLoanAmount += row.loan_amount || 0;
+    group.rows.push(toNbfcRow(row));
+  }
+  return [...grouped.values()];
+}
+
 async function getStudentDetails(req, res) {
   try {
     const { userId } = req.params;
 
-    const [feeDetails, applications, companyLogs, flexLogs] = await Promise.all([
-      getUserFeeDetails(userId),
-      getApplicationDetails(userId),
-      getCompanyPaymentLogs(userId),
-      getFlexPaymentLogs(userId),
-    ]);
+    const [feeDetails, applications, companyLogs, flexLogs, contacts] =
+      await Promise.all([
+        getUserFeeDetails(userId),
+        getApplicationDetails(userId),
+        getCompanyPaymentLogs(userId),
+        getFlexPaymentLogs(userId),
+        getNbfcSupportMails().catch(() => []),
+      ]);
 
     if (!feeDetails) {
       return res.status(404).json({ error: "Student not found" });
     }
 
     const summary = toFeeSummary(feeDetails);
+    const nbfcRows = applications.map(toNbfcRow);
+    const mappedCompanyLogs = companyLogs
+      .map(toCompanyLog)
+      .filter((log) => log.paidAmount != null || log.paidDate);
+    const mappedFlexLogs = flexLogs
+      .map(toFlexLog)
+      .filter((log) => log.paidAmount != null || log.paidDate);
 
     res.json({
       userId: feeDetails.user_id,
@@ -161,9 +185,26 @@ async function getStudentDetails(req, res) {
       nbfcLoanAmountCovered: summary.nbfcLoanAmountCovered,
       totalAmountCovered: summary.totalAmountCovered,
       remainingAmountToPay: summary.remainingAmountToPay,
-      nbfcRows: applications.map(toNbfcRow),
-      companyLogs: companyLogs.map(toCompanyLog),
-      flexLogs: flexLogs.map(toFlexLog),
+      nbfcRows,
+      companyLogs: mappedCompanyLogs,
+      flexLogs: mappedFlexLogs,
+      // Same shapes the student /payments page uses
+      portal: {
+        student: {
+          userId: feeDetails.user_id,
+          name: summary.studentName,
+          programme: summary.programme,
+          productCode: summary.productCode,
+        },
+        summary,
+        nbfcGroups: groupNbfcApplications(applications),
+        contacts: contacts.map((row) => ({
+          nbfcName: row.nbfc,
+          email: row.support_mail,
+        })),
+        companyLogs: mappedCompanyLogs,
+        flexLogs: mappedFlexLogs,
+      },
     });
   } catch (error) {
     console.error("Student details error:", error.message);

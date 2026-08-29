@@ -49,6 +49,18 @@ async function saveAuthToken({ token, userId, expiresAt }) {
   );
 }
 
+async function peekAuthToken(token) {
+  await ensureAuthTokenTable();
+  const { rows } = await getPool().query(
+    `SELECT user_id, expires_at, used
+     FROM auth_tokens
+     WHERE token = $1
+     LIMIT 1`,
+    [token]
+  );
+  return rows[0] || null;
+}
+
 async function consumeAuthToken(token) {
   await ensureAuthTokenTable();
   const { rows } = await getPool().query(
@@ -67,5 +79,6 @@ module.exports = {
   getPool,
   ensureAuthTokenTable,
   saveAuthToken,
+  peekAuthToken,
   consumeAuthToken,
 };

@@ -4,7 +4,7 @@ const {
   issueSession,
   toStudentPayload,
 } = require("./authController");
-const { saveAuthToken, consumeAuthToken } = require("../config/postgres");
+const { saveAuthToken, consumeAuthToken, peekAuthToken } = require("../config/postgres");
 
 const DEFAULT_FRONTEND_URL = "https://fee-details.nxtwave.academy";
 const DEFAULT_SSO_LOGIN_URL = "https://meetings.ccbp.in/mid/fee-details";
@@ -200,6 +200,19 @@ async function validateToken(req, res) {
     let stored;
     try {
       stored = await consumeAuthToken(token);
+      // Concurrent remount (React StrictMode) may race the first consume.
+      // If the token was just used for the same user_id, allow this request.
+      if (!stored) {
+        const peeked = await peekAuthToken(token);
+        if (
+          peeked &&
+          peeked.used === true &&
+          peeked.user_id === decoded.userId &&
+          new Date(peeked.expires_at).getTime() > Date.now()
+        ) {
+          stored = { user_id: peeked.user_id, expires_at: peeked.expires_at };
+        }
+      }
     } catch (dbError) {
       console.error("[SSO] Postgres token lookup failed:", dbError.message);
       return res.status(503).json({

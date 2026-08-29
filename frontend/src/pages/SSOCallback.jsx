@@ -23,6 +23,9 @@ const TOKEN_PARAM_KEYS = [
   "authCode",
   "code",
 ];
+
+// Keep resolved promises for the page lifetime so React StrictMode / remounts
+// do not burn a one-time Neon token twice.
 const pendingTokenExchanges = new Map();
 
 function readSsoParam(location, keys) {
@@ -37,16 +40,51 @@ function readSsoParam(location, keys) {
   return null;
 }
 
+function cacheKeyForToken(token) {
+  return `sso_exchange_v1:${token.slice(0, 24)}:${token.slice(-24)}`;
+}
+
+function readCachedExchange(token) {
+  try {
+    const raw = sessionStorage.getItem(cacheKeyForToken(token));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.token || !parsed?.student) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedExchange(token, data) {
+  try {
+    sessionStorage.setItem(cacheKeyForToken(token), JSON.stringify(data));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
 function exchangeTokenOnce(token) {
+  const cached = readCachedExchange(token);
+  if (cached) {
+    return Promise.resolve({ data: cached });
+  }
+
   const pendingExchange = pendingTokenExchanges.get(token);
   if (pendingExchange) return pendingExchange;
 
-  const exchange = ssoAPI.validateToken(token);
+  const exchange = ssoAPI
+    .validateToken(token)
+    .then((response) => {
+      writeCachedExchange(token, response.data);
+      return response;
+    })
+    .catch((error) => {
+      pendingTokenExchanges.delete(token);
+      throw error;
+    });
+
   pendingTokenExchanges.set(token, exchange);
-  exchange.then(
-    () => pendingTokenExchanges.delete(token),
-    () => pendingTokenExchanges.delete(token)
-  );
   return exchange;
 }
 

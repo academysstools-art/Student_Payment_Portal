@@ -12,6 +12,8 @@ const HANDOFF_TTL_SECONDS = 5 * 60;
 const ALLOWED_FRONTEND_ORIGINS = new Set([
   "https://fee-details.nxtwave.academy",
   "https://payment-portal-academy.replit.app",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
 ]);
 const ALLOWED_SSO_DESTINATIONS = new Set([
   "https://meetings.ccbp.in/mid/fee-details",

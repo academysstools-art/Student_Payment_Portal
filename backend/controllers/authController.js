@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken");
-const { isUserAllowed, getUserFeeDetails } = require("../config/bigquery");
+const { getUserFeeDetails } = require("../config/bigquery");
 
 function issueSession(student) {
   return jwt.sign(
@@ -23,14 +23,12 @@ function toStudentPayload(student) {
   };
 }
 
-// Forms already authenticated this user. Load payment data if fee details exist.
+// Student must exist in BigQuery fee details. Otherwise SSO falls back to the
+// standard "open through your NxtWave account" gate — no empty payment page.
 async function findEligibleStudent(userId) {
+  if (!userId || !String(userId).trim()) return null;
   const feeDetails = await getUserFeeDetails(userId);
-  if (feeDetails) return feeDetails;
-
-  const allowed = await isUserAllowed(userId);
-  if (!allowed) return null;
-  return { user_id: userId.trim(), first_name: "", program_name: "", product_code: "" };
+  return feeDetails || null;
 }
 
 async function loginWithUserId(req, res) {

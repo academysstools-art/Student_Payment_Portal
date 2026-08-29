@@ -1,0 +1,1 @@
+- [SSO token boundaries](sso-token-boundaries.md) — production payment access requires a one-time DB-backed handoff exchange and a typed student session.

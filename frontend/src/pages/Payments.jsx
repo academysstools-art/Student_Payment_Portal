@@ -59,7 +59,7 @@ export default function Payments() {
   const [feedbackSent, setFeedbackSent] = useState(false);
 
   // Tracking refs
-  const startTimeRef = useRef(Date.now());
+  const startTimeRef = useRef(0);
   const maxScrollRef = useRef(0);
   const viewedSectionsRef = useRef(new Set());
   const feedbackWasOpenedRef = useRef(false);
@@ -95,6 +95,7 @@ export default function Payments() {
 
   // Page view + time spent + scroll depth
   useEffect(() => {
+    startTimeRef.current = Date.now();
     track("fee_page_viewed");
 
     const handleScroll = () => {

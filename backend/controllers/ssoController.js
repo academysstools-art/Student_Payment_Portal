@@ -140,28 +140,31 @@ async function validateToken(req, res) {
       return res.status(400).json({ error: "Token is required" });
     }
 
-    let userId = null;
+    let decoded;
     try {
-      const stored = await consumeAuthToken(token);
-      if (stored) userId = stored.user_id;
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({ error: "Invalid or expired token" });
+    }
+    if (decoded.type !== "sso_handoff") {
+      return res.status(401).json({ error: "Invalid token type" });
+    }
+
+    let stored;
+    try {
+      stored = await consumeAuthToken(token);
     } catch (dbError) {
       console.error("[SSO] Postgres token lookup failed:", dbError.message);
+      return res.status(503).json({
+        error: "Authentication service unavailable",
+        message: "Unable to validate the one-time token",
+      });
+    }
+    if (!stored || stored.user_id !== decoded.userId) {
+      return res.status(401).json({ error: "Invalid, expired, or already used token" });
     }
 
-    if (!userId) {
-      let decoded;
-      try {
-        decoded = jwt.verify(token, process.env.JWT_SECRET);
-      } catch (err) {
-        return res.status(401).json({ error: "Invalid or expired token" });
-      }
-      if (decoded.type !== "sso_handoff") {
-        return res.status(401).json({ error: "Invalid token type" });
-      }
-      userId = decoded.userId;
-    }
-
-    const student = await findEligibleStudent(userId);
+    const student = await findEligibleStudent(decoded.userId);
     if (!student) {
       return res.status(404).json({ error: "Student not found" });
     }
@@ -176,35 +179,33 @@ async function validateToken(req, res) {
   }
 }
 
-// Browser redirect callback — SSO system redirects here with user_id in query
+// Compatibility redirect: only forwards an already-issued handoff token.
+// A user_id by itself must never mint a token from a public browser request.
 async function ssoCallback(req, res) {
   const frontendUrl = (
     process.env.FRONTEND_URL || "https://fee-details.nxtwave.academy"
   ).replace(/\/+$/, "");
 
   try {
-    const userId = firstNonEmpty(
-      req.query.user_id,
-      req.query.userId,
-      req.query.uid
+    const token = firstNonEmpty(
+      req.query.token,
+      req.query.auth_token,
+      req.query.authToken
     );
 
-    if (!userId) {
-      return res.redirect(`${frontendUrl}/sso?error=missing_user_id`);
+    if (!token) {
+      return res.redirect(`${frontendUrl}/sso?error=missing_token`);
     }
 
-    const student = await findEligibleStudent(userId);
-    const tokenUserId = student?.user_id || userId;
-    const token = signHandoffToken(tokenUserId);
     try {
-      await saveAuthToken({
-        token,
-        userId: tokenUserId,
-        expiresAt: handoffExpiry(token),
-      });
-    } catch (dbError) {
-      console.error("[SSO] Failed to store callback token:", dbError.message);
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      if (decoded.type !== "sso_handoff") {
+        return res.redirect(`${frontendUrl}/sso?error=invalid_token`);
+      }
+    } catch {
+      return res.redirect(`${frontendUrl}/sso?error=invalid_token`);
     }
+
     res.redirect(
       `${frontendUrl}/sso?token=${encodeURIComponent(token)}`
     );

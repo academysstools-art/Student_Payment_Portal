@@ -4,33 +4,39 @@ import { useAuth } from "../context/AuthContext";
 import { ssoAPI } from "../services/api";
 import { Loader2 } from "lucide-react";
 
+const SSO_ERROR_MESSAGES = {
+  missing_user_id: "User ID was not provided by the SSO system. Please try again.",
+  missing_token: "The SSO system did not provide an authentication token. Please try again.",
+  invalid_token: "The authentication token is invalid or expired. Please try again.",
+  student_not_found: "Student not found. Please check your credentials.",
+  cohort_restricted: "Payment portal is only available for students onboarded from 2025 onwards.",
+  server_error: "Something went wrong. Please try again.",
+};
+
 export default function SSOCallback() {
   const [searchParams] = useSearchParams();
-  const [error, setError] = useState("");
+  const errorParam = searchParams.get("error");
+  const authToken =
+    searchParams.get("token") ||
+    searchParams.get("auth_token") ||
+    searchParams.get("authToken");
+  const [error, setError] = useState(() =>
+    errorParam
+      ? SSO_ERROR_MESSAGES[errorParam] || "Authentication failed. Please try again."
+      : authToken
+        ? ""
+        : "No authentication token found. Please try logging in again."
+  );
   const { login } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
     // Check for error from backend redirect
-    const errorParam = searchParams.get("error");
     if (errorParam) {
-      const errorMessages = {
-        missing_user_id: "User ID was not provided by the SSO system. Please try again.",
-        student_not_found: "Student not found. Please check your credentials.",
-        cohort_restricted: "Payment portal is only available for students onboarded from 2025 onwards.",
-        server_error: "Something went wrong. Please try again.",
-      };
-      setError(errorMessages[errorParam] || "Authentication failed. Please try again.");
       return;
     }
 
-    const authToken =
-      searchParams.get("token") ||
-      searchParams.get("auth_token") ||
-      searchParams.get("authToken");
-
     if (!authToken) {
-      setError("No authentication token found. Please try logging in again.");
       return;
     }
 
@@ -48,7 +54,7 @@ export default function SSOCallback() {
     }
 
     validateAndLogin();
-  }, [searchParams, login, navigate]);
+  }, [authToken, errorParam, login, navigate]);
 
   const ssoLoginUrl = import.meta.env.VITE_SSO_LOGIN_URL;
 

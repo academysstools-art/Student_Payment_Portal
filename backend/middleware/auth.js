@@ -10,6 +10,9 @@ function authenticateToken(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded.type !== "student_session") {
+      return res.status(403).json({ error: "Invalid token type" });
+    }
     req.user = decoded;
     next();
   } catch (err) {

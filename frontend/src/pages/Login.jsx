@@ -5,6 +5,8 @@ import { authAPI } from "../services/api";
 import { TrendingUp, Loader2, ExternalLink } from "lucide-react";
 
 const SSO_LOGIN_URL = import.meta.env.VITE_SSO_LOGIN_URL;
+const DIRECT_LOGIN_ENABLED =
+  import.meta.env.VITE_ALLOW_DIRECT_USER_ID_LOGIN === "true";
 
 export default function Login() {
   const [userId, setUserId] = useState("");
@@ -67,6 +69,7 @@ export default function Login() {
           </div>
         )}
 
+        {DIRECT_LOGIN_ENABLED && (
         <form onSubmit={handleStudentLogin} className="space-y-5">
           <div>
             <label
@@ -107,6 +110,13 @@ export default function Login() {
             )}
           </button>
         </form>
+        )}
+
+        {!DIRECT_LOGIN_ENABLED && !SSO_LOGIN_URL && (
+          <div className="bg-blue-50 text-blue-900 px-4 py-3 rounded-xl text-sm font-bold border border-blue-100 text-center">
+            Please open this payment portal through your NxtWave account.
+          </div>
+        )}
       </div>
     </div>
   );

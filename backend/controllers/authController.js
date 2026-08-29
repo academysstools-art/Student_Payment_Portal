@@ -7,6 +7,7 @@ function issueSession(student) {
       userId: student.user_id,
       name: student.first_name,
       programme: student.program_name,
+      type: "student_session",
     },
     process.env.JWT_SECRET,
     { expiresIn: "24h" }
@@ -34,6 +35,13 @@ async function findEligibleStudent(userId) {
 
 async function loginWithUserId(req, res) {
   try {
+    if (process.env.ALLOW_DIRECT_USER_ID_LOGIN !== "true") {
+      return res.status(403).json({
+        error: "Direct user ID login is disabled",
+        message: "Please authenticate through SSO",
+      });
+    }
+
     const { userId } = req.body;
 
     if (!userId) {

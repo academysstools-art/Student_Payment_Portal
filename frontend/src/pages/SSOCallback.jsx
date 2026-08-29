@@ -1,12 +1,10 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ssoAPI } from "../services/api";
 import { ExternalLink, Loader2 } from "lucide-react";
 
-const SSO_LOGIN_URL =
-  import.meta.env.VITE_SSO_LOGIN_URL ||
-  "https://meetings.ccbp.in/mid/fee-details";
+const SSO_LOGIN_URL = "/api/sso/login";
 
 const SSO_ERROR_MESSAGES = {
   missing_user_id: "User ID was not provided by the SSO system. Please try again.",
@@ -17,13 +15,45 @@ const SSO_ERROR_MESSAGES = {
   server_error: "Something went wrong. Please try again.",
 };
 
+const TOKEN_PARAM_KEYS = [
+  "token",
+  "auth_token",
+  "authToken",
+  "auth_code",
+  "authCode",
+  "code",
+];
+const pendingTokenExchanges = new Map();
+
+function readSsoParam(location, keys) {
+  const searchParams = new URLSearchParams(location.search);
+  const hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
+
+  for (const key of keys) {
+    const value = searchParams.get(key) || hashParams.get(key);
+    if (value) return value;
+  }
+
+  return null;
+}
+
+function exchangeTokenOnce(token) {
+  const pendingExchange = pendingTokenExchanges.get(token);
+  if (pendingExchange) return pendingExchange;
+
+  const exchange = ssoAPI.validateToken(token);
+  pendingTokenExchanges.set(token, exchange);
+  exchange.then(
+    () => pendingTokenExchanges.delete(token),
+    () => pendingTokenExchanges.delete(token)
+  );
+  return exchange;
+}
+
 export default function SSOCallback() {
-  const [searchParams] = useSearchParams();
-  const errorParam = searchParams.get("error");
-  const authToken =
-    searchParams.get("token") ||
-    searchParams.get("auth_token") ||
-    searchParams.get("authToken");
+  const location = useLocation();
+  const errorParam = readSsoParam(location, ["error"]);
+  const authToken = readSsoParam(location, TOKEN_PARAM_KEYS);
   const [error, setError] = useState(() =>
     errorParam
       ? SSO_ERROR_MESSAGES[errorParam] || "Authentication failed. Please try again."
@@ -41,7 +71,7 @@ export default function SSOCallback() {
 
     async function validateAndLogin() {
       try {
-        const response = await ssoAPI.validateToken(authToken);
+        const response = await exchangeTokenOnce(authToken);
         if (cancelled) return;
         login(response.data.token, response.data.student);
         navigate("/payments", { replace: true });

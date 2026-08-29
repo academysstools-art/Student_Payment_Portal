@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useState } from "react";
 
 const AuthContext = createContext(null);
 
@@ -9,19 +9,19 @@ export function AuthProvider({ children }) {
     return saved ? JSON.parse(saved) : null;
   });
 
-  function login(tokenValue, studentData) {
+  const login = useCallback((tokenValue, studentData) => {
     localStorage.setItem("token", tokenValue);
     localStorage.setItem("student", JSON.stringify(studentData));
     setToken(tokenValue);
     setStudent(studentData);
-  }
+  }, []);
 
-  function logout() {
+  const logout = useCallback(() => {
     localStorage.removeItem("token");
     localStorage.removeItem("student");
     setToken(null);
     setStudent(null);
-  }
+  }, []);
 
   const isAuthenticated = !!token;
   const isAdmin = student?.role === "admin";

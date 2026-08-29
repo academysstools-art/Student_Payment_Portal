@@ -1,6 +1,14 @@
 const express = require("express");
 const router = express.Router();
-const { generateToken, validateToken, ssoCallback } = require("../controllers/ssoController");
+const {
+  startLogin,
+  generateToken,
+  validateToken,
+  ssoCallback,
+} = require("../controllers/ssoController");
+
+// GET /api/sso/login — starts the external NxtWave login at runtime.
+router.get("/login", startLogin);
 
 // POST /api/sso/generate-token — called by Forms backend (server-to-server)
 router.post("/generate-token", generateToken);

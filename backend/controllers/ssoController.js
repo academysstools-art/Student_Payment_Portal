@@ -7,7 +7,16 @@ const {
 const { saveAuthToken, consumeAuthToken } = require("../config/postgres");
 
 const DEFAULT_FRONTEND_URL = "https://fee-details.nxtwave.academy";
+const DEFAULT_SSO_LOGIN_URL = "https://meetings.ccbp.in/mid/fee-details";
 const HANDOFF_TTL_SECONDS = 5 * 60;
+const ALLOWED_FRONTEND_ORIGINS = new Set([
+  "https://fee-details.nxtwave.academy",
+  "https://payment-portal-academy.replit.app",
+]);
+const ALLOWED_SSO_DESTINATIONS = new Set([
+  "https://meetings.ccbp.in/mid/fee-details",
+  "https://forms.ccbp.in/mid/fee-details",
+]);
 
 function firstNonEmpty(...values) {
   for (const value of values) {
@@ -19,7 +28,49 @@ function firstNonEmpty(...values) {
 }
 
 function frontendOrigin() {
-  return (process.env.FRONTEND_URL || DEFAULT_FRONTEND_URL).replace(/\/+$/, "");
+  const destination = new URL(process.env.FRONTEND_URL || DEFAULT_FRONTEND_URL);
+  if (
+    destination.username ||
+    destination.password ||
+    destination.search ||
+    destination.hash ||
+    destination.pathname !== "/" ||
+    !ALLOWED_FRONTEND_ORIGINS.has(destination.origin)
+  ) {
+    throw new Error("FRONTEND_URL is not an allowed payment portal origin");
+  }
+  return destination.origin;
+}
+
+function ssoLoginUrl() {
+  const destination = new URL(
+    process.env.SSO_LOGIN_URL ||
+      process.env.VITE_SSO_LOGIN_URL ||
+      DEFAULT_SSO_LOGIN_URL
+  );
+  const destinationWithoutQuery = `${destination.origin}${destination.pathname.replace(/\/+$/, "")}`;
+  if (
+    destination.protocol !== "https:" ||
+    destination.username ||
+    destination.password ||
+    destination.hash ||
+    !ALLOWED_SSO_DESTINATIONS.has(destinationWithoutQuery)
+  ) {
+    throw new Error("SSO login URL is not an allowed NxtWave destination");
+  }
+  return destination;
+}
+
+function startLogin(req, res) {
+  try {
+    const destination = ssoLoginUrl();
+    return res.redirect(302, destination.toString());
+  } catch (error) {
+    console.error("[SSO] Invalid login URL configuration:", error.message);
+    return res.status(500).json({
+      error: "SSO login is not configured correctly",
+    });
+  }
 }
 
 // Forms sends the authenticated student's user_id after phone/OTP login.
@@ -183,9 +234,8 @@ async function validateToken(req, res) {
 
 // Compatibility: only forward an already-issued handoff token to the SPA.
 async function ssoCallback(req, res) {
-  const frontendUrl = frontendOrigin();
-
   try {
+    const frontendUrl = frontendOrigin();
     const token = firstNonEmpty(
       req.query.token,
       req.query.auth_token,
@@ -208,8 +258,12 @@ async function ssoCallback(req, res) {
     res.redirect(`${frontendUrl}/sso?token=${encodeURIComponent(token)}`);
   } catch (error) {
     console.error("SSO callback error:", error.message);
-    return res.redirect(`${frontendUrl}/sso?error=server_error`);
+    try {
+      return res.redirect(`${frontendOrigin()}/sso?error=server_error`);
+    } catch {
+      return res.status(500).json({ error: "SSO callback is not configured correctly" });
+    }
   }
 }
 
-module.exports = { generateToken, validateToken, ssoCallback };
+module.exports = { startLogin, generateToken, validateToken, ssoCallback };

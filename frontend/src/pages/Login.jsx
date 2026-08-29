@@ -4,9 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { authAPI } from "../services/api";
 import { TrendingUp, Loader2, ExternalLink } from "lucide-react";
 
-const SSO_LOGIN_URL =
-  import.meta.env.VITE_SSO_LOGIN_URL ||
-  "https://meetings.ccbp.in/mid/fee-details";
+const SSO_LOGIN_URL = "/api/sso/login";
 const DIRECT_LOGIN_ENABLED =
   import.meta.env.VITE_ALLOW_DIRECT_USER_ID_LOGIN === "true";
 
@@ -56,7 +54,7 @@ export default function Login() {
             <div className="bg-blue-50 text-blue-900 px-4 py-3 rounded-xl text-sm font-bold border border-blue-100 text-center">
               Please open this payment portal through your NxtWave account.
             </div>
-            <div className="text-center space-y-2">
+            <div className="text-center">
               <a
                 href={SSO_LOGIN_URL}
                 className="inline-flex items-center justify-center gap-2 bg-blue-900 hover:bg-blue-800 text-white text-sm font-bold no-underline px-5 py-2.5 rounded-xl transition-colors"
@@ -64,9 +62,6 @@ export default function Login() {
                 <ExternalLink size={14} />
                 Login with NxtWave Account
               </a>
-              <p className="text-[11px] text-slate-400 font-medium">
-                SSO login → token → user ID → payment details
-              </p>
             </div>
           </div>
         )}

@@ -3,8 +3,13 @@ import AdminNavbar from "../components/AdminNavbar";
 import { adminAPI } from "../services/api";
 import {
   BarChart3, Search, MessageSquare, Download,
-  Loader2, Users, Activity, Clock, ChevronRight, X,
+  Loader2, Users, Activity, Clock, ChevronRight, X, Eye,
 } from "lucide-react";
+
+const fmtMoney = (v) => {
+  const n = parseFloat(v);
+  return isNaN(n) ? v || "--" : `₹${n.toLocaleString("en-IN")}`;
+};
 
 const TABS = [
   { id: "analytics", label: "Analytics", icon: BarChart3 },
@@ -50,6 +55,9 @@ export default function AdminDashboard() {
 function AnalyticsTab() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [preview, setPreview] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
 
   useEffect(() => {
     adminAPI.getAnalytics().then((res) => {
@@ -57,6 +65,40 @@ function AnalyticsTab() {
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
+
+  async function openPreview(userId, meta = {}) {
+    if (!userId) return;
+    setPreviewLoading(true);
+    setPreviewError("");
+    setPreview({
+      userId,
+      name: meta.name || "",
+      programme: meta.programme || "",
+      loading: true,
+    });
+    try {
+      const res = await adminAPI.getStudentDetails(userId);
+      setPreview(res.data);
+    } catch (err) {
+      const status = err.response?.status;
+      const message =
+        err.response?.data?.error || "Unable to load student preview";
+      if (status === 404) {
+        setPreview({
+          userId,
+          name: meta.name || "",
+          programme: meta.programme || "",
+          missingFeeData: true,
+        });
+        setPreviewError("");
+      } else {
+        setPreview(null);
+        setPreviewError(message);
+      }
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
 
   if (loading) return <Spinner />;
   if (!data) return <Empty text="Failed to load analytics" />;
@@ -134,6 +176,7 @@ function AnalyticsTab() {
                   <th className="px-4 py-2">Name</th>
                   <th className="px-4 py-2">Programme</th>
                   <th className="px-4 py-2">Time</th>
+                  <th className="px-4 py-2 text-right">Preview</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -145,6 +188,21 @@ function AnalyticsTab() {
                     <td className="px-4 py-2 text-[10px] text-slate-400">
                       {new Date(log.timestamp).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" })}
                     </td>
+                    <td className="px-4 py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openPreview(log.userId, {
+                            name: log.name,
+                            programme: log.programme,
+                          })
+                        }
+                        className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-blue-900 hover:text-blue-700 cursor-pointer"
+                      >
+                        <Eye size={13} />
+                        Open
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -152,6 +210,51 @@ function AnalyticsTab() {
           </div>
         )}
       </div>
+
+      {previewError && (
+        <StudentPreviewModal
+          onClose={() => setPreviewError("")}
+          title="Preview unavailable"
+        >
+          <p className="text-sm font-semibold text-amber-950">{previewError}</p>
+        </StudentPreviewModal>
+      )}
+      {(preview || previewLoading) && !previewError && (
+        <StudentPreviewModal
+          onClose={() => {
+            setPreview(null);
+            setPreviewLoading(false);
+          }}
+          title={
+            preview?.name
+              ? preview.name
+              : preview?.missingFeeData
+                ? "Not in fee dataset"
+                : "Student preview"
+          }
+          subtitle={preview?.userId}
+        >
+          {previewLoading || preview?.loading ? (
+            <div className="flex justify-center py-10">
+              <Loader2 className="w-6 h-6 text-blue-900 animate-spin" />
+            </div>
+          ) : preview?.missingFeeData ? (
+            <div className="space-y-3">
+              <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-sm font-semibold text-amber-950 leading-relaxed">
+                This student logged in, but they are not in the BigQuery fee
+                details dataset yet — so payment preview is unavailable.
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <DetailItem label="User ID" value={preview.userId} />
+                <DetailItem label="Name" value={preview.name || "—"} />
+                <DetailItem label="Programme" value={preview.programme || "—"} />
+              </div>
+            </div>
+          ) : (
+            <StudentPreviewBody student={preview} />
+          )}
+        </StudentPreviewModal>
+      )}
     </div>
   );
 }
@@ -178,21 +281,31 @@ function StudentsTab() {
     setLoading(false);
   }
 
-  async function viewDetails(userId) {
+  async function viewDetails(userId, meta = {}) {
     setDetailLoading(true);
+    setSelected({
+      userId,
+      name: meta.name || "",
+      programme: meta.programme || "",
+      loading: true,
+    });
     try {
       const res = await adminAPI.getStudentDetails(userId);
       setSelected(res.data);
-    } catch {
-      setSelected(null);
+    } catch (err) {
+      if (err.response?.status === 404) {
+        setSelected({
+          userId,
+          name: meta.name || "",
+          programme: meta.programme || "",
+          missingFeeData: true,
+        });
+      } else {
+        setSelected(null);
+      }
     }
     setDetailLoading(false);
   }
-
-  const fmt = (v) => {
-    const n = parseFloat(v);
-    return isNaN(n) ? v || "--" : `₹${n.toLocaleString("en-IN")}`;
-  };
 
   return (
     <div className="space-y-4">
@@ -233,10 +346,15 @@ function StudentsTab() {
                     <td className="px-4 py-2.5 text-xs font-black text-blue-900">{s.userId}</td>
                     <td className="px-4 py-2.5 text-xs font-bold text-slate-700">{s.name || "--"}</td>
                     <td className="px-4 py-2.5 text-xs text-slate-600">{s.programme}</td>
-                    <td className="px-4 py-2.5 text-xs font-black text-slate-900">{fmt(s.remainingAmountToPay)}</td>
+                    <td className="px-4 py-2.5 text-xs font-black text-slate-900">{fmtMoney(s.remainingAmountToPay)}</td>
                     <td className="px-4 py-2.5">
                       <button
-                        onClick={() => viewDetails(s.userId)}
+                        onClick={() =>
+                          viewDetails(s.userId, {
+                            name: s.name,
+                            programme: s.programme,
+                          })
+                        }
                         className="text-blue-900 hover:text-blue-700 cursor-pointer"
                       >
                         <ChevronRight size={14} />
@@ -251,110 +369,33 @@ function StudentsTab() {
       )}
 
       {/* Detail View */}
-      {detailLoading && <Spinner />}
-      {selected && !detailLoading && (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-            <h3 className="font-black text-sm text-slate-800">
-              {selected.userId}
-            </h3>
-            <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-              <X size={16} />
-            </button>
-          </div>
-          <div className="p-4 space-y-4">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <DetailItem label="Name" value={selected.name} />
-              <DetailItem label="Programme" value={selected.programme} />
-              <DetailItem label="Product Code" value={selected.productCode} />
-              <DetailItem label="User Type" value={selected.userType} />
-              <DetailItem label="Total Fee" value={fmt(selected.totalProgrammeFee)} />
-              <DetailItem label="Discount" value={fmt(selected.discountApplied)} />
-              <DetailItem label="Net Payable" value={fmt(selected.totalFeePayable)} />
-              <DetailItem label="Jodo Flex" value={fmt(selected.amountPaidInFlex)} />
-              <DetailItem label="Direct Pay" value={fmt(selected.amountPaidToNxtWave)} />
-              <DetailItem label="NBFC Covered" value={fmt(selected.nbfcLoanAmountCovered)} />
-              <DetailItem label="Total Covered" value={fmt(selected.totalAmountCovered)} />
-              <DetailItem label="Remaining" value={fmt(selected.remainingAmountToPay)} highlight />
+      {selected && (
+        <StudentPreviewModal
+          onClose={() => {
+            setSelected(null);
+            setDetailLoading(false);
+          }}
+          title={
+            selected.name
+              ? selected.name
+              : selected.missingFeeData
+                ? "Not in fee dataset"
+                : "Student preview"
+          }
+          subtitle={selected.userId}
+        >
+          {detailLoading || selected.loading ? (
+            <div className="flex justify-center py-10">
+              <Loader2 className="w-6 h-6 text-blue-900 animate-spin" />
             </div>
-
-            {/* NBFC Rows */}
-            {selected.nbfcRows?.length > 0 && (
-              <div>
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">NBFC Details</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {selected.nbfcRows.map((row, i) => (
-                    <div key={i} className="bg-slate-50 p-3 rounded-lg">
-                      <p className="text-xs font-black text-slate-900">{row.nbfcName}</p>
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-[10px] text-slate-500">
-                        <span>Loan: {fmt(row.loanAmount)}</span>
-                        <span>EMI: {fmt(row.emiAmount)}</span>
-                        <span>{row.tenure}</span>
-                        <span className="font-bold">{row.status}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Company Payment Logs */}
-            {selected.companyLogs?.length > 0 && (
-              <div>
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Company Payment Logs</p>
-                <div className="overflow-x-auto bg-slate-50 rounded-lg">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="text-left text-[9px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-200">
-                        <th className="px-3 py-2">Date</th>
-                        <th className="px-3 py-2">Amount</th>
-                        <th className="px-3 py-2">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {selected.companyLogs.map((log, i) => (
-                        <tr key={i}>
-                          <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paidDate || "--"}</td>
-                          <td className="px-3 py-1.5 text-[10px] font-bold text-slate-900">{fmt(log.paidAmount)}</td>
-                          <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paymentStatus || "--"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* Flex Payment Logs */}
-            {selected.flexLogs?.length > 0 && (
-              <div>
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Flex Payment Logs</p>
-                <div className="overflow-x-auto bg-slate-50 rounded-lg">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="text-left text-[9px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-200">
-                        <th className="px-3 py-2">Date</th>
-                        <th className="px-3 py-2">Amount</th>
-                        <th className="px-3 py-2">Status</th>
-                        <th className="px-3 py-2">Mode</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {selected.flexLogs.map((log, i) => (
-                        <tr key={i}>
-                          <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paidDate || "--"}</td>
-                          <td className="px-3 py-1.5 text-[10px] font-bold text-slate-900">{fmt(log.paidAmount)}</td>
-                          <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paymentStatus || "--"}</td>
-                          <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paymentMode || "--"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+          ) : selected.missingFeeData ? (
+            <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-sm font-semibold text-amber-950">
+              Student not found in fee details dataset.
+            </div>
+          ) : (
+            <StudentPreviewBody student={selected} />
+          )}
+        </StudentPreviewModal>
       )}
 
       {results.length === 0 && query && !loading && (
@@ -494,6 +535,157 @@ function ExportTab() {
 }
 
 /* ─── Shared Components ─── */
+function StudentPreviewModal({ title, subtitle, onClose, children }) {
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="bg-white rounded-2xl border border-slate-200 w-full max-w-3xl max-h-[85vh] overflow-hidden shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center gap-3 sticky top-0">
+          <div className="min-w-0">
+            <h3 className="font-black text-sm text-slate-800 truncate">{title}</h3>
+            {subtitle ? (
+              <p className="text-[10px] font-bold text-blue-900 mt-0.5 truncate">
+                {subtitle}
+              </p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 text-slate-400 hover:text-slate-600 cursor-pointer"
+            aria-label="Close preview"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="p-4 overflow-y-auto max-h-[calc(85vh-52px)]">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function StudentPreviewBody({ student }) {
+  const companyLogs = (student.companyLogs || []).filter(
+    (log) => log.paidAmount != null || log.paidDate
+  );
+  const flexLogs = (student.flexLogs || []).filter(
+    (log) => log.paidAmount != null || log.paidDate
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <DetailItem label="Name" value={student.name} />
+        <DetailItem label="Programme" value={student.programme} />
+        <DetailItem label="Product Code" value={student.productCode} />
+        <DetailItem label="User Type" value={student.userType} />
+        <DetailItem label="Total Fee" value={fmtMoney(student.totalProgrammeFee)} />
+        <DetailItem label="Discount" value={fmtMoney(student.discountApplied)} />
+        <DetailItem label="Net Payable" value={fmtMoney(student.totalFeePayable)} />
+        <DetailItem label="Jodo Flex" value={fmtMoney(student.amountPaidInFlex)} />
+        <DetailItem label="Direct Pay" value={fmtMoney(student.amountPaidToNxtWave)} />
+        <DetailItem label="NBFC Covered" value={fmtMoney(student.nbfcLoanAmountCovered)} />
+        <DetailItem label="Total Covered" value={fmtMoney(student.totalAmountCovered)} />
+        <DetailItem label="Remaining" value={fmtMoney(student.remainingAmountToPay)} highlight />
+      </div>
+
+      {student.nbfcRows?.length > 0 && (
+        <div>
+          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">NBFC Details</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {student.nbfcRows.map((row, i) => (
+              <div key={i} className="bg-slate-50 p-3 rounded-lg">
+                <p className="text-xs font-black text-slate-900">{row.nbfcName}</p>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-[10px] text-slate-500">
+                  <span>Loan: {fmtMoney(row.loanAmount)}</span>
+                  <span>EMI: {fmtMoney(row.emiAmount)}</span>
+                  <span>{row.tenure}</span>
+                  <span className="font-bold">{row.status}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {companyLogs.length > 0 && (
+        <div>
+          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Company Payment Logs</p>
+          <div className="overflow-x-auto bg-slate-50 rounded-lg">
+            <table className="w-full">
+              <thead>
+                <tr className="text-left text-[9px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-200">
+                  <th className="px-3 py-2">Date</th>
+                  <th className="px-3 py-2">Amount</th>
+                  <th className="px-3 py-2">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {companyLogs.map((log, i) => (
+                  <tr key={i}>
+                    <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paidDate || "--"}</td>
+                    <td className="px-3 py-1.5 text-[10px] font-bold text-slate-900">{fmtMoney(log.paidAmount)}</td>
+                    <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paymentStatus || "--"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {flexLogs.length > 0 && (
+        <div>
+          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Flex Payment Logs</p>
+          <div className="overflow-x-auto bg-slate-50 rounded-lg">
+            <table className="w-full">
+              <thead>
+                <tr className="text-left text-[9px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-200">
+                  <th className="px-3 py-2">Date</th>
+                  <th className="px-3 py-2">Amount</th>
+                  <th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2">Mode</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {flexLogs.map((log, i) => (
+                  <tr key={i}>
+                    <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paidDate || "--"}</td>
+                    <td className="px-3 py-1.5 text-[10px] font-bold text-slate-900">{fmtMoney(log.paidAmount)}</td>
+                    <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paymentStatus || "--"}</td>
+                    <td className="px-3 py-1.5 text-[10px] text-slate-600">{log.paymentMode || "--"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatCard({ icon: Icon, label, value, color }) {
   const colors = {
     blue: "bg-blue-50 text-blue-900",

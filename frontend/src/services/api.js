@@ -27,9 +27,16 @@ api.interceptors.response.use(
       url.includes("/admin/login") ||
       url.includes("/sso/");
     if (!isAuthEndpoint && (error.response?.status === 401 || error.response?.status === 403)) {
+      const wasAdmin = (() => {
+        try {
+          return JSON.parse(localStorage.getItem("student") || "{}")?.role === "admin";
+        } catch {
+          return false;
+        }
+      })();
       localStorage.removeItem("token");
       localStorage.removeItem("student");
-      window.location.href = "/";
+      window.location.href = wasAdmin ? "/admin-login" : "/";
     }
     return Promise.reject(error);
   }

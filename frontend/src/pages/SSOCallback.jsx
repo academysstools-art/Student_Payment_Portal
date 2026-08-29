@@ -2,9 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ssoAPI } from "../services/api";
-import { ExternalLink, Loader2, TrendingUp } from "lucide-react";
-
-const SSO_LOGIN_URL = "/api/sso/login";
+import { Loader2, TrendingUp } from "lucide-react";
 
 const TOKEN_PARAM_KEYS = [
   "token",
@@ -156,21 +154,10 @@ export default function SSOCallback() {
   if (notInDataset) {
     return (
       <PortalShell>
-        <div className="space-y-4">
-          <div className="bg-amber-50 text-amber-950 px-4 py-4 rounded-xl text-sm font-semibold border border-amber-100 text-center leading-relaxed">
-            The fee details portal is currently in a pilot phase, but we&apos;ll
-            notify you as soon as it&apos;s ready for you — thank you for your
-            patience!
-          </div>
-          <div className="text-center">
-            <a
-              href={SSO_LOGIN_URL}
-              className="inline-flex items-center justify-center gap-2 bg-blue-900 hover:bg-blue-800 text-white text-sm font-bold no-underline px-5 py-2.5 rounded-xl transition-colors"
-            >
-              <ExternalLink size={14} />
-              Login with NxtWave Account
-            </a>
-          </div>
+        <div className="bg-amber-50 text-amber-950 px-4 py-4 rounded-xl text-sm font-semibold border border-amber-100 text-center leading-relaxed">
+          The fee details portal is currently in a pilot phase, but we&apos;ll
+          notify you as soon as it&apos;s ready for you — thank you for your
+          patience!
         </div>
       </PortalShell>
     );

@@ -38,6 +38,7 @@ app.use(
         origin.endsWith(".vercel.app") ||
         origin.endsWith(".replit.dev") ||
         origin.endsWith(".replit.app") ||
+        origin.endsWith(".pike.repl.co") ||
         origin.endsWith(".nxtwave.academy") ||
         origin.endsWith(".ccbp.in")
       ) {

@@ -2,12 +2,22 @@ import { createContext, useCallback, useContext, useState } from "react";
 
 const AuthContext = createContext(null);
 
+function readSavedStudent() {
+  const saved = localStorage.getItem("student");
+  if (!saved) return null;
+
+  try {
+    return JSON.parse(saved);
+  } catch {
+    localStorage.removeItem("token");
+    localStorage.removeItem("student");
+    return null;
+  }
+}
+
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(localStorage.getItem("token"));
-  const [student, setStudent] = useState(() => {
-    const saved = localStorage.getItem("student");
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [student, setStudent] = useState(readSavedStudent);
+  const [token, setToken] = useState(() => localStorage.getItem("token"));
 
   const login = useCallback((tokenValue, studentData) => {
     localStorage.setItem("token", tokenValue);

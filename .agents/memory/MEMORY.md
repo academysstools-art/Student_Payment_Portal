@@ -1,1 +1,2 @@
 - [SSO token boundaries](sso-token-boundaries.md) — production payment access requires a one-time DB-backed handoff exchange and a typed student session.
+- [Dependency security overrides](dependency-security-overrides.md) — scope unavoidable major-version overrides to the affected parent and verify its behavior.

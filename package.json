@@ -2,6 +2,7 @@
   "name": "student-payment-portal",
   "private": true,
   "scripts": {
+    "test:dependencies": "node --test scripts/dependencies.test.cjs",
     "build": "npm ci --prefix frontend && npm ci --prefix backend --omit=dev && npm run build --prefix frontend",
     "start": "node backend/server.js"
   }

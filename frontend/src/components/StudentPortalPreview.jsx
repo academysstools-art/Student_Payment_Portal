@@ -442,7 +442,10 @@ export default function StudentPortalPreview({ portal }) {
                                 {fmt(row.emiAmount)}
                               </td>
                               <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
-                                {row.tenure || "--"}
+                                <span className="block">{row.tenure || row.tenureRange || "--"}</span>
+                                {row.tenure && row.tenureRange && (
+                                  <span className="block text-[10px] text-slate-400">{row.tenureRange}</span>
+                                )}
                               </td>
                               <td className="py-2.5 px-3 text-right">
                                 <span

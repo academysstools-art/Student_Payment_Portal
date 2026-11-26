@@ -59,6 +59,23 @@ export const paymentAPI = {
   getNBFCContacts: () => api.get("/payments/nbfc-contacts"),
   submitFeedback: (data) => api.post("/payments/feedback", data),
   trackEvent: (eventName, eventData) => api.post("/payments/track-event", { eventName, eventData }).catch(() => {}),
+  // keepalive lets the request finish while the tab is closing
+  trackEventOnExit: (eventName, eventData) => {
+    try {
+      const token = localStorage.getItem("token");
+      fetch(`${API_BASE_URL}/payments/track-event`, {
+        method: "POST",
+        keepalive: true,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ eventName, eventData }),
+      }).catch(() => {});
+    } catch {
+      // analytics must never break the page
+    }
+  },
 };
 
 export const adminAPI = {

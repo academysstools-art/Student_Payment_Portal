@@ -7,17 +7,22 @@ const {
   getNbfcSupportMails,
   searchUsers,
   getAllUserFeeDetails,
+} = require("../config/bigquery");
+const {
   getLoginTotals,
   getRecentLogins,
   getEventStats,
   getFeedbackEntries,
   appendFeedback,
-} = require("../config/bigquery");
+} = require("../config/analyticsDb");
 const {
   toNbfcRow,
   toCompanyLog,
   toFlexLog,
   toFeeSummary,
+  toNbfcContact,
+  groupNbfcApplications,
+  hasPayment,
 } = require("./paymentController");
 
 // Hardcoded admin credentials
@@ -95,7 +100,7 @@ async function getAnalytics(req, res) {
         userId: row.user_id,
         name: row.name || "",
         programme: row.programme || "",
-        method: "sso",
+        method: row.method || "sso",
         timestamp: row.login_datetime,
       })),
       eventStats: toEventStats(eventStats),
@@ -131,20 +136,6 @@ async function searchStudents(req, res) {
   }
 }
 
-function groupNbfcApplications(applications) {
-  const grouped = new Map();
-  for (const row of applications) {
-    const name = (row.nbfc_name || "Unknown").trim();
-    if (!grouped.has(name)) {
-      grouped.set(name, { nbfcName: name, totalLoanAmount: 0, rows: [] });
-    }
-    const group = grouped.get(name);
-    group.totalLoanAmount += row.loan_amount || 0;
-    group.rows.push(toNbfcRow(row));
-  }
-  return [...grouped.values()];
-}
-
 async function getStudentDetails(req, res) {
   try {
     const { userId } = req.params;
@@ -163,13 +154,9 @@ async function getStudentDetails(req, res) {
     }
 
     const summary = toFeeSummary(feeDetails);
-    const nbfcRows = applications.map(toNbfcRow);
-    const mappedCompanyLogs = companyLogs
-      .map(toCompanyLog)
-      .filter((log) => log.paidAmount != null || log.paidDate);
-    const mappedFlexLogs = flexLogs
-      .map(toFlexLog)
-      .filter((log) => log.paidAmount != null || log.paidDate);
+    const nbfcRows = applications.filter((row) => row.nbfc_name).map(toNbfcRow);
+    const mappedCompanyLogs = companyLogs.map(toCompanyLog).filter(hasPayment);
+    const mappedFlexLogs = flexLogs.map(toFlexLog).filter(hasPayment);
 
     res.json({
       userId: feeDetails.user_id,
@@ -198,10 +185,7 @@ async function getStudentDetails(req, res) {
         },
         summary,
         nbfcGroups: groupNbfcApplications(applications),
-        contacts: contacts.map((row) => ({
-          nbfcName: row.nbfc,
-          email: row.support_mail,
-        })),
+        contacts: contacts.map(toNbfcContact),
         companyLogs: mappedCompanyLogs,
         flexLogs: mappedFlexLogs,
       },
@@ -218,12 +202,12 @@ async function getFeedback(req, res) {
 
     res.json(
       rows.map((row) => ({
-        id: row.submitted_at,
+        id: row.id,
         userId: row.user_id,
         name: row.student_name,
         programme: row.programme,
         rating: row.rating || 0,
-        selectedOptions: (row.selected_options || "").split(", ").filter(Boolean),
+        selectedOptions: row.selected_options || [],
         comments: row.comments || "",
         timestamp: row.submitted_at,
       }))

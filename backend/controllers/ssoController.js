@@ -3,12 +3,27 @@ const {
   findEligibleStudent,
   issueSession,
   toStudentPayload,
+  logLogin,
 } = require("./authController");
 const { saveAuthToken, consumeAuthToken, peekAuthToken } = require("../config/postgres");
 
 const DEFAULT_FRONTEND_URL = "https://fee-details.nxtwave.academy";
 const DEFAULT_SSO_LOGIN_URL = "https://meetings.ccbp.in/mid/fee-details";
 const HANDOFF_TTL_SECONDS = 5 * 60;
+// A used token is accepted again only this long after first use, to cover
+// two tabs/requests racing the exchange. Replays after that are rejected.
+const REPLAY_GRACE_MS = 10 * 1000;
+
+function withinReplayGrace(row, userId) {
+  return Boolean(
+    row &&
+      row.used === true &&
+      row.user_id === userId &&
+      row.used_at &&
+      Date.now() - new Date(row.used_at).getTime() <= REPLAY_GRACE_MS &&
+      new Date(row.expires_at).getTime() > Date.now()
+  );
+}
 const ALLOWED_FRONTEND_ORIGINS = new Set([
   "https://fee-details.nxtwave.academy",
   "https://payment-portal-academy.replit.app",
@@ -233,20 +248,15 @@ async function validateToken(req, res) {
     }
 
     let stored;
+    let firstUse = false;
     try {
       stored = await consumeAuthToken(token);
+      firstUse = Boolean(stored);
       // Concurrent remount may race the first consume.
       // If the token was just used for the same user_id, allow this request.
-      if (!stored && peeked.used === true) {
-        stored = { user_id: peeked.user_id, expires_at: peeked.expires_at };
-      } else if (!stored) {
+      if (!stored) {
         const again = await peekAuthToken(token);
-        if (
-          again &&
-          again.used === true &&
-          again.user_id === decoded.userId &&
-          new Date(again.expires_at).getTime() > Date.now()
-        ) {
+        if (withinReplayGrace(again, decoded.userId)) {
           stored = { user_id: again.user_id, expires_at: again.expires_at };
         }
       }
@@ -263,6 +273,9 @@ async function validateToken(req, res) {
         error: "Invalid, expired, or already used token",
       });
     }
+
+    // A remount can replay the same token; count the login only once
+    if (firstUse) logLogin(student, "sso");
 
     res.json({
       token: issueSession(student),

@@ -376,7 +376,7 @@ function ExportTab() {
       <Download size={32} className="text-slate-300 mx-auto mb-3" />
       <h3 className="font-black text-sm text-slate-800 mb-1">Export Student Data</h3>
       <p className="text-xs text-slate-400 mb-4">
-        Download all student payment data from Google Sheets as a CSV file.
+        Download all pilot students' fee details from BigQuery as a CSV file.
       </p>
       <button
         onClick={handleExport}

@@ -4,21 +4,80 @@ const {
   getFlexPaymentLogs: fetchFlexPaymentLogs,
   getCompanyPaymentLogs: fetchCompanyPaymentLogs,
   getNbfcSupportMails,
-  appendEventLog,
 } = require("../config/bigquery");
+const { appendEventLog } = require("../config/analyticsDb");
 const { formatDate } = require("../utils/format");
 
 // ---------- Row mappers (BigQuery columns -> API shape) ----------
 
+// "BAJAJ_FINANCE_LIMITED" -> "Bajaj Finance Limited". Used for both the
+// application groups and the support-mail contacts so they still match.
+function formatNbfcName(name) {
+  if (!name) return "";
+  return String(name)
+    .trim()
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function monthYear(value) {
+  if (!value) return "";
+  const parts = formatDate(value).split(" "); // "02 Jun 2025"
+  return parts.length === 3 ? `${parts[1]} ${parts[2]}` : String(value);
+}
+
+// tenure: "24 months"; tenureRange: "Jun 2025 - May 2027" (raw text fallback)
+function formatTenure(row) {
+  return row.tenure ? `${row.tenure} months` : null;
+}
+
+function formatTenureRange(row) {
+  const start = monthYear(row.emi_installments_start_date);
+  const end = monthYear(row.emi_installments_end_date);
+  return start && end ? `${start} - ${end}` : row.start_and_end_date || null;
+}
+
 function toNbfcRow(row) {
   return {
-    nbfcName: row.nbfc_name,
+    nbfcName: formatNbfcName(row.nbfc_name),
+    applicationId: row.application_id,
     loanAmount: row.loan_amount,
-    tenure: row.start_and_end_date,
+    tenure: formatTenure(row),
+    tenureRange: formatTenureRange(row),
+    tenureMonths: row.tenure,
     emiAmount: row.emi_amount,
     status: row.status,
     dueDate: row.due_month,
   };
+}
+
+// Users with no payment plan have one application row with every column
+// NULL; skip it so they don't get an "Unknown" EMI card.
+function groupNbfcApplications(rows) {
+  const grouped = new Map();
+  for (const row of rows) {
+    const name = formatNbfcName(row.nbfc_name);
+    if (!name) continue;
+    if (!grouped.has(name)) {
+      grouped.set(name, { nbfcName: name, totalLoanAmount: 0, rows: [] });
+    }
+    const group = grouped.get(name);
+    group.totalLoanAmount += row.loan_amount || 0;
+    group.rows.push(toNbfcRow(row));
+  }
+  return [...grouped.values()];
+}
+
+function toNbfcContact(row) {
+  return { nbfcName: formatNbfcName(row.nbfc), email: row.support_mail };
+}
+
+// Flex logs include placeholder rows (no date, amount or status) for users
+// with no flex payments yet.
+function hasPayment(log) {
+  return log.paidAmount != null || Boolean(log.paidDate);
 }
 
 function toCompanyLog(row) {
@@ -75,19 +134,7 @@ async function getPaymentSummary(req, res) {
 async function getNBFCDetails(req, res) {
   try {
     const rows = await getApplicationDetails(req.user.userId);
-
-    const grouped = new Map();
-    for (const row of rows) {
-      const name = (row.nbfc_name || "Unknown").trim();
-      if (!grouped.has(name)) {
-        grouped.set(name, { nbfcName: name, totalLoanAmount: 0, rows: [] });
-      }
-      const group = grouped.get(name);
-      group.totalLoanAmount += row.loan_amount || 0;
-      group.rows.push(toNbfcRow(row));
-    }
-
-    res.json({ nbfcGroups: [...grouped.values()] });
+    res.json({ nbfcGroups: groupNbfcApplications(rows) });
   } catch (error) {
     console.error("NBFC details error:", error.message);
     res.status(500).json({ error: "Failed to fetch NBFC details" });
@@ -97,7 +144,7 @@ async function getNBFCDetails(req, res) {
 async function getCompanyPaymentLogs(req, res) {
   try {
     const rows = await fetchCompanyPaymentLogs(req.user.userId);
-    res.json({ logs: rows.map(toCompanyLog) });
+    res.json({ logs: rows.map(toCompanyLog).filter(hasPayment) });
   } catch (error) {
     console.error("Company payment logs error:", error.message);
     res.status(500).json({ error: "Failed to fetch company payment logs" });
@@ -107,7 +154,7 @@ async function getCompanyPaymentLogs(req, res) {
 async function getFlexPaymentLogs(req, res) {
   try {
     const rows = await fetchFlexPaymentLogs(req.user.userId);
-    res.json({ logs: rows.map(toFlexLog) });
+    res.json({ logs: rows.map(toFlexLog).filter(hasPayment) });
   } catch (error) {
     console.error("Flex payment logs error:", error.message);
     res.status(500).json({ error: "Failed to fetch flex payment logs" });
@@ -117,7 +164,9 @@ async function getFlexPaymentLogs(req, res) {
 async function getNBFCAllRows(req, res) {
   try {
     const rows = await getApplicationDetails(req.user.userId);
-    res.json({ details: rows.map(toNbfcRow) });
+    res.json({
+      details: rows.filter((row) => row.nbfc_name).map(toNbfcRow),
+    });
   } catch (error) {
     console.error("NBFC all rows error:", error.message);
     res.status(500).json({ error: "Failed to fetch NBFC detail rows" });
@@ -128,10 +177,7 @@ async function getNBFCContacts(req, res) {
   try {
     const rows = await getNbfcSupportMails();
     res.json({
-      contacts: rows.map((row) => ({
-        nbfcName: row.nbfc,
-        email: row.support_mail,
-      })),
+      contacts: rows.map(toNbfcContact),
     });
   } catch (error) {
     console.error("NBFC contacts error:", error.message);
@@ -176,4 +222,7 @@ module.exports = {
   toCompanyLog,
   toFlexLog,
   toFeeSummary,
+  toNbfcContact,
+  groupNbfcApplications,
+  hasPayment,
 };

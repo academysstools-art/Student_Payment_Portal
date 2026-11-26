@@ -57,6 +57,7 @@ export default function Payments() {
   const [feedbackComment, setFeedbackComment] = useState("");
   const [feedbackSending, setFeedbackSending] = useState(false);
   const [feedbackSent, setFeedbackSent] = useState(false);
+  const [feedbackError, setFeedbackError] = useState("");
 
   // Tracking refs
   const startTimeRef = useRef(0);
@@ -66,6 +67,7 @@ export default function Payments() {
   const paymentSummaryRef = useRef(null);
   const coveredAmountRef = useRef(null);
   const emiDetailsRef = useRef(null);
+  const sendExitEventsRef = useRef(() => {});
 
   const track = useCallback((eventName, eventData) => {
     paymentAPI.trackEvent(eventName, eventData);
@@ -108,12 +110,19 @@ export default function Payments() {
     };
     window.addEventListener("scroll", handleScroll, { passive: true });
 
+    // Fires on tab close AND on unmount (logout/navigation); send only once
+    let exitSent = false;
     const handleUnload = () => {
+      if (exitSent) return;
+      exitSent = true;
       const seconds = Math.round((Date.now() - startTimeRef.current) / 1000);
-      if (seconds > 0) track("time_spent", { seconds });
-      if (maxScrollRef.current > 0) track("scroll_depth", { maxPercent: maxScrollRef.current });
+      if (seconds > 0) paymentAPI.trackEventOnExit("time_spent", { seconds });
+      if (maxScrollRef.current > 0) {
+        paymentAPI.trackEventOnExit("scroll_depth", { maxPercent: maxScrollRef.current });
+      }
     };
     window.addEventListener("beforeunload", handleUnload);
+    sendExitEventsRef.current = handleUnload;
 
     return () => {
       handleUnload();
@@ -156,6 +165,8 @@ export default function Payments() {
   }, [loading, track]);
 
   function handleLogout() {
+    // Send time/scroll while the session token still exists
+    sendExitEventsRef.current();
     logout();
     navigate("/");
   }
@@ -197,6 +208,7 @@ export default function Payments() {
   }
 
   function resetFeedback() {
+    setFeedbackError("");
     setFeedbackRating(0);
     setFeedbackOptions([]);
     setFeedbackComment("");
@@ -205,6 +217,7 @@ export default function Payments() {
   async function submitFeedback() {
     if (feedbackRating === 0) return;
     setFeedbackSending(true);
+    setFeedbackError("");
     try {
       await paymentAPI.submitFeedback({
         rating: feedbackRating,
@@ -219,7 +232,7 @@ export default function Payments() {
         setFeedbackSent(false);
       }, 2000);
     } catch {
-      // silently fail
+      setFeedbackError("Couldn't send your feedback. Please try again.");
     }
     setFeedbackSending(false);
   }
@@ -728,7 +741,10 @@ export default function Payments() {
                                 {fmt(row.emiAmount)}
                               </td>
                               <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
-                                {row.tenure || "--"}
+                                <span className="block">{row.tenure || row.tenureRange || "--"}</span>
+                                {row.tenure && row.tenureRange && (
+                                  <span className="block text-[10px] text-slate-400">{row.tenureRange}</span>
+                                )}
                               </td>
                               <td className="py-2.5 px-3 text-right">
                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusColor(row.status)}`}>
@@ -928,6 +944,9 @@ export default function Payments() {
                   </>
                 )}
 
+                {feedbackError && (
+                  <p className="mt-3 text-xs font-semibold text-rose-600">{feedbackError}</p>
+                )}
                 <button
                   onClick={submitFeedback}
                   disabled={feedbackSending || feedbackRating === 0}

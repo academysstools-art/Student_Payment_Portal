@@ -29,6 +29,15 @@ export function AuthProvider({ children }) {
   const logout = useCallback(() => {
     localStorage.removeItem("token");
     localStorage.removeItem("student");
+    // SSOCallback caches the exchanged session per handoff token; drop it so
+    // reopening the old /sso?token= link can't sign back in after logout.
+    try {
+      Object.keys(sessionStorage)
+        .filter((key) => key.startsWith("sso_exchange_v1:"))
+        .forEach((key) => sessionStorage.removeItem(key));
+    } catch {
+      // storage unavailable
+    }
     setToken(null);
     setStudent(null);
   }, []);

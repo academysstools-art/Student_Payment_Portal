@@ -33,6 +33,7 @@ async function ensureAuthTokenTable() {
   await client.query(
     `CREATE INDEX IF NOT EXISTS auth_tokens_user_id_idx ON auth_tokens (user_id)`
   );
+  await client.query(`ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS used_at TIMESTAMPTZ`);
   schemaReady = true;
 }
 
@@ -44,7 +45,8 @@ async function saveAuthToken({ token, userId, expiresAt }) {
      ON CONFLICT (token) DO UPDATE SET
        user_id = EXCLUDED.user_id,
        expires_at = EXCLUDED.expires_at,
-       used = FALSE`,
+       used = FALSE,
+       used_at = NULL`,
     [token, userId, expiresAt]
   );
 }
@@ -52,7 +54,7 @@ async function saveAuthToken({ token, userId, expiresAt }) {
 async function peekAuthToken(token) {
   await ensureAuthTokenTable();
   const { rows } = await getPool().query(
-    `SELECT user_id, expires_at, used
+    `SELECT user_id, expires_at, used, used_at
      FROM auth_tokens
      WHERE token = $1
      LIMIT 1`,
@@ -65,7 +67,7 @@ async function consumeAuthToken(token) {
   await ensureAuthTokenTable();
   const { rows } = await getPool().query(
     `UPDATE auth_tokens
-     SET used = TRUE
+     SET used = TRUE, used_at = NOW()
      WHERE token = $1
        AND used = FALSE
        AND expires_at > NOW()

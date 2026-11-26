@@ -12,13 +12,7 @@ const TABLES = {
   NBFC_SUPPORT_MAILS: "nbfcs_support_mails",
 };
 
-// Tables the portal writes to / reads analytics from
-const OUTPUT_TABLES = {
-  LOGIN_LOGS: "student_login_logs",
-  EVENT_LOGS: "student_event_logs",
-  FEEDBACK: "student_feedback",
-};
-
+// Read-only: logins, events and feedback are stored in Neon (config/analyticsDb.js)
 function getBigQueryClient() {
   if (bqInstance) return bqInstance;
 
@@ -48,10 +42,6 @@ function getBigQueryClient() {
 
 function inputDataset() {
   return process.env.BIGQUERY_DATASET || "academy_payments_portal_data";
-}
-
-function outputDataset() {
-  return process.env.BIGQUERY_OUTPUT_DATASET || "academy_payments_portal_output_data";
 }
 
 function qualify(dataset, table) {
@@ -148,103 +138,6 @@ async function getAllUserFeeDetails() {
   return runQuery(`SELECT * FROM ${qualify(inputDataset(), TABLES.USER_FEE_DETAILS)}`);
 }
 
-// Login history is a view over the platform's SSO access log — read only.
-// Names live in the fee details view, so join to label each login.
-async function getLoginTotals() {
-  const rows = await runQuery(
-    `SELECT COUNT(*) AS total_logins, COUNT(DISTINCT user_id) AS unique_students
-     FROM ${qualify(outputDataset(), OUTPUT_TABLES.LOGIN_LOGS)}`
-  );
-  return rows[0] || { total_logins: 0, unique_students: 0 };
-}
-
-async function getRecentLogins(limit = 50) {
-  return runQuery(
-    `SELECT l.user_id, f.first_name AS name, f.program_name AS programme, l.login_datetime
-     FROM ${qualify(outputDataset(), OUTPUT_TABLES.LOGIN_LOGS)} l
-     LEFT JOIN ${qualify(inputDataset(), TABLES.USER_FEE_DETAILS)} f USING (user_id)
-     ORDER BY l.login_datetime DESC
-     LIMIT @limit`,
-    { limit }
-  );
-}
-
-async function getEventStats() {
-  const rows = await runQuery(
-    `SELECT
-       COUNTIF(event_name = 'fee_page_viewed')        AS fee_page_viewed,
-       COUNTIF(event_name = 'payment_summary_viewed') AS payment_summary_viewed,
-       COUNTIF(event_name = 'covered_amount_viewed')  AS covered_amount_viewed,
-       COUNTIF(event_name = 'emi_details_viewed')     AS emi_details_viewed,
-       COUNTIF(event_name = 'clicked_payment_history') AS clicked_payment_history,
-       COUNTIF(event_name = 'clicked_contact_jodo')   AS clicked_contact_jodo,
-       COUNTIF(event_name = 'clicked_contact_nbfc')   AS clicked_contact_nbfc,
-       COUNTIF(event_name = 'clicked_chat_support')   AS clicked_chat_support,
-       COUNTIF(event_name = 'feedback_opened')        AS feedback_opened,
-       COUNTIF(event_name = 'feedback_abandoned')     AS feedback_abandoned,
-       COUNTIF(event_name = 'feedback_submitted')     AS feedback_submitted,
-       AVG(IF(event_name = 'time_spent',
-              SAFE_CAST(JSON_VALUE(event_data, '$.seconds') AS FLOAT64), NULL))    AS avg_time_spent,
-       AVG(IF(event_name = 'scroll_depth',
-              SAFE_CAST(JSON_VALUE(event_data, '$.maxPercent') AS FLOAT64), NULL)) AS avg_scroll_depth
-     FROM ${qualify(outputDataset(), OUTPUT_TABLES.EVENT_LOGS)}`
-  );
-  return rows[0] || null;
-}
-
-async function getFeedbackEntries(limit = 1000) {
-  return runQuery(
-    `SELECT user_id, student_name, programme, rating, selected_options, comments, submitted_at
-     FROM ${qualify(outputDataset(), OUTPUT_TABLES.FEEDBACK)}
-     ORDER BY submitted_at DESC LIMIT @limit`,
-    { limit }
-  );
-}
-
-// ---------- Writes ----------
-
-async function insertRows(table, rows) {
-  const client = getBigQueryClient();
-  await client.dataset(outputDataset()).table(table).insert(rows);
-}
-
-// Fire-and-forget: analytics must never break a user request
-async function appendEventLog({ userId, name, programme, eventName, eventData }) {
-  try {
-    await insertRows(OUTPUT_TABLES.EVENT_LOGS, [
-      {
-        user_id: userId,
-        student_name: name || "",
-        programme: programme || "",
-        event_name: eventName,
-        event_data: eventData ? JSON.stringify(eventData) : null,
-        event_at: new Date().toISOString(),
-      },
-    ]);
-  } catch (error) {
-    console.error("[BigQuery] Failed to log event:", error.message);
-  }
-}
-
-async function appendFeedback({ userId, name, programme, rating, selectedOptions, comments }) {
-  try {
-    await insertRows(OUTPUT_TABLES.FEEDBACK, [
-      {
-        user_id: userId,
-        student_name: name || "",
-        programme: programme || "",
-        rating,
-        selected_options: (selectedOptions || []).join(", "),
-        comments: comments || "",
-        submitted_at: new Date().toISOString(),
-      },
-    ]);
-    console.log("[BigQuery] Feedback recorded:", userId, rating);
-  } catch (error) {
-    console.error("[BigQuery] Failed to record feedback:", error.message);
-  }
-}
-
 module.exports = {
   getBigQueryClient,
   runQuery,
@@ -256,12 +149,5 @@ module.exports = {
   getNbfcSupportMails,
   searchUsers,
   getAllUserFeeDetails,
-  getLoginTotals,
-  getRecentLogins,
-  getEventStats,
-  getFeedbackEntries,
-  appendEventLog,
-  appendFeedback,
   TABLES,
-  OUTPUT_TABLES,
 };

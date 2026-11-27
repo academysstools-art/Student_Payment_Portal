@@ -83,7 +83,7 @@ function goToSsoGate(navigate) {
 
 function PortalShell({ children }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-500 via-purple-500 to-blue-700 px-5">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-white via-blue-50 to-blue-200 px-5">
       <div className="bg-white rounded-[2rem] shadow-2xl p-10 w-full max-w-md">
         <div className="text-center mb-6">
           <div className="bg-blue-900 text-white p-3 rounded-xl inline-block mb-4">
@@ -168,13 +168,13 @@ export default function SSOCallback() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-500 via-purple-500 to-blue-700">
-      <div className="text-center text-white">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-white via-blue-50 to-blue-200">
+      <div className="text-center text-blue-900">
         <Loader2 className="w-10 h-10 animate-spin mx-auto mb-3" />
         <p className="font-bold text-sm tracking-tighter uppercase">
           Verifying your identity...
         </p>
-        <p className="mt-2 text-xs text-white/80 font-medium">
+        <p className="mt-2 text-xs text-blue-700 font-medium">
           Validating SSO token and loading payment details
         </p>
       </div>
